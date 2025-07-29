@@ -1,0 +1,1 @@
+"""MAFCI DigiArchive apps package."""

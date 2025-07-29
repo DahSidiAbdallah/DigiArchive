@@ -349,6 +349,10 @@ media/uploads/
 staticfiles/
 static/
 
+# Root level lock files (should be in frontend/ directory)
+/package-lock.json
+/yarn.lock
+
 # Log files
 logs/
 *.log
