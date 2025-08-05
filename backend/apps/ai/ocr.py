@@ -13,9 +13,17 @@ from apps.documents.models import Document
 def extract_text_from_image(image_path):
     """Extract text from an image using pytesseract OCR."""
     try:
-        # Set the tesseract command if specified in settings
-        if hasattr(settings, 'TESSERACT_CMD'):
-            pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
+        # Check if tesseract is available
+        try:
+            # Set the tesseract command if specified in settings
+            if hasattr(settings, 'TESSERACT_CMD'):
+                pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
+            
+            # Test if tesseract is working
+            pytesseract.get_tesseract_version()
+        except Exception as tesseract_error:
+            print(f"Tesseract not available: {tesseract_error}")
+            return f"OCR not available - Tesseract not installed. Error: {tesseract_error}"
         
         # Open the image using PIL
         image = Image.open(image_path)
@@ -25,7 +33,7 @@ def extract_text_from_image(image_path):
         return text
     except Exception as e:
         print(f"Error in OCR processing: {str(e)}")
-        return ""
+        return f"OCR processing failed: {str(e)}"
 
 
 def extract_text_from_pdf(pdf_path):
@@ -57,6 +65,11 @@ def extract_text_from_pdf(pdf_path):
 @shared_task(name="process_document_ocr")
 def process_document_ocr(document_id):
     """Celery task to process OCR for a document."""
+    return process_document_ocr_sync(document_id)
+
+
+def process_document_ocr_sync(document_id):
+    """Synchronous OCR processing function."""
     try:
         document = Document.objects.get(id=document_id)
         

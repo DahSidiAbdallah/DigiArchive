@@ -89,3 +89,9 @@ def process_document_with_ocr(sender, instance, created, **kwargs):
             app.send_task('process_document_ocr', args=[instance.id])
         except Exception as e:
             print(f"Error queuing OCR task: {str(e)}")
+            # Fallback: try to process synchronously for development
+            try:
+                from apps.ai.ocr import process_document_ocr_sync
+                process_document_ocr_sync(instance.id)
+            except Exception as sync_error:
+                print(f"Error in synchronous OCR processing: {str(sync_error)}")

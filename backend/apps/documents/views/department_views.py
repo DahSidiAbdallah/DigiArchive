@@ -14,16 +14,20 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Filter departments based on user permissions."""
+        # Staff users can see all departments
         if self.request.user.is_staff:
             return Department.objects.all()
         
-        # Get user's department
-        user_dept = getattr(self.request.user, 'department', '')
-        if not user_dept:
-            return Department.objects.none()
+        # Regular authenticated users can see all departments too
+        # This allows them to upload documents to any department
+        return Department.objects.all()
         
-        # Try to match user's department name
-        return Department.objects.filter(name=user_dept)
+        # Alternative: If you want to restrict to user's department only:
+        # user_dept = getattr(self.request.user, 'department', '')
+        # if user_dept:
+        #     return Department.objects.filter(name=user_dept)
+        # else:
+        #     return Department.objects.all()  # Show all if no specific department
 
 
 class FolderViewSet(viewsets.ModelViewSet):
