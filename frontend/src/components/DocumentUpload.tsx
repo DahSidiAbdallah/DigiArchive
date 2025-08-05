@@ -3,6 +3,7 @@ import { useDocumentUpload, DocumentFormData } from '@/hooks/useDocumentUpload'
 import { Tag, getTags } from '@/services/document.service'
 import DepartmentSelector from './DepartmentSelector'
 import { useLocation } from 'react-router-dom'
+import FolderManager from '@/components/FolderManager'
 
 interface DocumentUploadProps {
   onSuccess?: () => void
@@ -29,6 +30,8 @@ export default function DocumentUpload({ onSuccess, onCancel, isOpen }: Document
   const [selectedTags, setSelectedTags] = useState<number[]>([])
   const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null)
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null)
+  const [folderRefreshKey, setFolderRefreshKey] = useState(0)
+  const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false)
   const [fileName, setFileName] = useState<string>('')
   const [validationError, setValidationError] = useState<string>('')
   
@@ -227,6 +230,7 @@ export default function DocumentUpload({ onSuccess, onCancel, isOpen }: Document
   const displayError = validationError || uploadError
   
   return (
+    <>
     <div className={`fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-50 ${isOpen ? 'block' : 'hidden'} overflow-y-auto`}>
       <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
         <div className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 w-full max-w-3xl mx-auto">
@@ -444,7 +448,15 @@ export default function DocumentUpload({ onSuccess, onCancel, isOpen }: Document
                     onDepartmentChange={(id) => setSelectedDepartment(id)}
                     onFolderChange={(id) => setSelectedFolder(id)}
                     className="space-y-2"
+                    refreshKey={folderRefreshKey}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setIsFolderManagerOpen(true)}
+                    className="mt-2 inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-primary-700 shadow border border-primary-200 hover:bg-primary-50"
+                  >
+                    Ajouter un dossier
+                  </button>
                 </div>
               </div>
               
@@ -508,6 +520,17 @@ export default function DocumentUpload({ onSuccess, onCancel, isOpen }: Document
         </div>
       </div>
     </div>
+    <FolderManager
+      isOpen={isFolderManagerOpen}
+      onClose={() => setIsFolderManagerOpen(false)}
+      departmentId={selectedDepartment}
+      onFolderCreated={(folder) => {
+        setFolderRefreshKey((k) => k + 1)
+        setSelectedFolder(folder.id)
+        setFormData(prev => ({ ...prev, folder: folder.id }))
+      }}
+    />
+    </>
   )
 }
 

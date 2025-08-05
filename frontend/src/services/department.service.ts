@@ -3,6 +3,7 @@
  */
 import api from './api';
 import { Department, Folder } from '@/types/department.types';
+import { AxiosRequestConfig } from 'axios';
 
 /**
  * Get all departments
@@ -46,19 +47,28 @@ export const deleteDepartment = async (id: number): Promise<void> => {
 /**
  * Get all folders
  */
-export const getFolders = async (departmentId?: number, parentId?: number | null): Promise<Folder[]> => {
+export const getFolders = async (
+  departmentId?: number,
+  parentId?: number | null,
+  search?: string,
+  config?: AxiosRequestConfig
+): Promise<Folder[]> => {
   let url = '/folders/';
   const params: Record<string, string> = {};
-  
+
   if (departmentId !== undefined) {
     params.department = departmentId.toString();
   }
-  
+
   if (parentId !== undefined) {
     params.parent = parentId === null ? 'null' : parentId.toString();
   }
-  
-  const response = await api.get<Folder[]>(url, { params });
+
+  if (search) {
+    params.search = search;
+  }
+
+  const response = await api.get<Folder[]>(url, { params, ...(config || {}) });
   return response.data;
 };
 
