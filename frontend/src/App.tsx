@@ -9,6 +9,7 @@ import DocumentDetail from '@/pages/DocumentDetail'
 import AdvancedSearch from '@/pages/AdvancedSearch'
 import Notifications from '@/pages/Notifications'
 import NotFound from '@/pages/NotFound'
+import Profile from '@/pages/Profile'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AuthProvider } from '@/hooks/useAuth'
 
@@ -31,6 +32,7 @@ function App() {
             </Route>
             <Route path="search" element={<AdvancedSearch />} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="profile" element={<Profile />} />
           </Route>
           
           {/* Fallback routes */}

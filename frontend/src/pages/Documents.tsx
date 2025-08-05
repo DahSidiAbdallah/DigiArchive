@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useDocuments } from '@/hooks/useDocuments';
 import DocumentListItem from '@/components/DocumentListItem';
 import DepartmentSelector from '@/components/DepartmentSelector';
+import FolderManager from '@/components/FolderManager';
 
 export default function Documents() {
   const { isAuthenticated, user } = useAuth();
@@ -11,6 +12,8 @@ export default function Documents() {
   const [documentType, setDocumentType] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
+  const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+  const [folderRefreshKey, setFolderRefreshKey] = useState(0);
 
   // Compose filters for useDocuments
   const filters = {
@@ -52,16 +55,28 @@ export default function Documents() {
       {/* Header and actions */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <h2 className="text-3xl font-bold text-primary-700 tracking-tight">Documents</h2>
-        <button
-          type="button"
-          
-          className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2 text-base font-semibold text-white shadow hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition"
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Télécharger un Document
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="button"
+
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2 text-base font-semibold text-white shadow hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Télécharger un Document
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsFolderManagerOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2 text-base font-semibold text-primary-700 shadow border border-primary-200 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            Gérer les dossiers
+          </button>
+        </div>
       </div>
       <div className="bg-white/90 shadow-xl rounded-2xl border border-gray-100">
         <div className="p-6 space-y-6">
@@ -72,6 +87,7 @@ export default function Documents() {
             onDepartmentChange={setSelectedDepartment}
             onFolderChange={setSelectedFolder}
             className="mb-4"
+            refreshKey={folderRefreshKey}
           />
           {/* Search and filter */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -261,6 +277,15 @@ export default function Documents() {
           )}
         </div>
       </div>
+      <FolderManager
+        isOpen={isFolderManagerOpen}
+        onClose={() => setIsFolderManagerOpen(false)}
+        departmentId={selectedDepartment}
+        onFolderCreated={(folder) => {
+          setFolderRefreshKey((k) => k + 1);
+          setSelectedFolder(folder.id);
+        }}
+      />
     </div>
   );
 }

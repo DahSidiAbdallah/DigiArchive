@@ -53,6 +53,10 @@ class FolderViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(parent__isnull=True)
             else:
                 queryset = queryset.filter(parent_id=parent_id)
+
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(name__icontains=search)
         
         # If not admin, filter by user's department
         if not self.request.user.is_staff:

@@ -8,6 +8,7 @@ interface DepartmentSelectorProps {
   onDepartmentChange: (departmentId: number | null) => void;
   onFolderChange: (folderId: number | null) => void;
   className?: string;
+  refreshKey?: number;
 }
 
 export default function DepartmentSelector({
@@ -15,7 +16,8 @@ export default function DepartmentSelector({
   selectedFolder,
   onDepartmentChange,
   onFolderChange,
-  className = ''
+  className = '',
+  refreshKey
 }: DepartmentSelectorProps) {
   // State
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -50,16 +52,14 @@ export default function DepartmentSelector({
         setFolders([]);
         return;
       }
-      
+
       setIsLoading(true);
       setError('');
-      
+
       try {
         const foldersData = await getFolders(selectedDepartment);
         setFolders(foldersData);
-        
-        // If the currently selected folder doesn't belong to this department,
-        // reset the folder selection
+
         if (selectedFolder && !foldersData.some(f => f.id === selectedFolder)) {
           onFolderChange(null);
         }
@@ -70,9 +70,9 @@ export default function DepartmentSelector({
         setIsLoading(false);
       }
     };
-    
+
     fetchFolders();
-  }, [selectedDepartment, selectedFolder, onFolderChange]);
+  }, [selectedDepartment, selectedFolder, onFolderChange, refreshKey]);
   
   // Handler for department change
   const handleDepartmentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
