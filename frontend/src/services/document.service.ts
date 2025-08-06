@@ -244,28 +244,20 @@ export const createDocument = async (document: Document): Promise<Document> => {
         if (key === 'file') {
           formData.append(key, value as File);
         } else if (key === 'tag_ids' && Array.isArray(value)) {
-          // Handle tag_ids in the same way for both create and update
-          if (value.length === 0) {
-            // Send empty value to clear all tags
-            formData.append('tag_ids', '');
-            console.log('Sending empty tag_ids array');
-          } else {
-            // Convert all values to numbers and filter out invalid ones
-            const numericTagIds = value
-              .map(tagId => {
-                if (typeof tagId === 'string') {
-                  return parseInt(tagId, 10);
-                }
-                return tagId;
-              })
-              .filter(tagId => typeof tagId === 'number' && !isNaN(tagId));
-              
-            // Add each tag ID separately (Django REST Framework expects this format)
-            numericTagIds.forEach(tagId => {
-              formData.append('tag_ids', tagId.toString());
-              console.log(`Adding tag_id: ${tagId}`);
-            });
-          }
+          // Only include tag_ids when there are actual tags selected
+          const numericTagIds = value
+            .map(tagId => {
+              if (typeof tagId === 'string') {
+                return parseInt(tagId, 10);
+              }
+              return tagId;
+            })
+            .filter(tagId => typeof tagId === 'number' && !isNaN(tagId));
+
+          numericTagIds.forEach(tagId => {
+            formData.append('tag_ids', tagId.toString());
+            console.log(`Adding tag_id: ${tagId}`);
+          });
         } else if (value !== undefined && value !== null) {
           formData.append(key, value.toString());
         }

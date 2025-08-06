@@ -60,21 +60,37 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'uploaded_by', 'created_at', 'updated_at', 'content_text', 'is_ocr_processed']
     
     def to_internal_value(self, data):
-        """Convert tag_ids if they're sent as strings."""
-        if 'tag_ids' in data and isinstance(data['tag_ids'], list):
-            try:
-                # Convert string tag IDs to integers if needed
-                tag_ids = []
-                for tag_id in data['tag_ids']:
-                    if isinstance(tag_id, str) and tag_id.isdigit():
-                        tag_ids.append(int(tag_id))
-                    else:
-                        tag_ids.append(tag_id)
-                data['tag_ids'] = tag_ids
-            except Exception as e:
-                # Log the error but continue processing
-                print(f"Error processing tag_ids: {e}")
-        
+        """Normalize tag_ids input to a list of integers."""
+        tag_ids = data.get('tag_ids')
+
+        if tag_ids is not None:
+            # Ensure tag_ids is always a list for consistent processing
+            if not isinstance(tag_ids, list):
+                tag_ids = [tag_ids]
+
+            cleaned_ids = []
+            for tag_id in tag_ids:
+                # Split comma separated strings (e.g. "1,2")
+                if isinstance(tag_id, str) and ',' in tag_id:
+                    parts = tag_id.split(',')
+                else:
+                    parts = [tag_id]
+
+                for part in parts:
+                    if isinstance(part, str):
+                        part = part.strip()
+                        if not part:
+                            # Skip empty strings which DRF can't convert
+                            continue
+                        if part.isdigit():
+                            cleaned_ids.append(int(part))
+                        # Ignore any non-numeric strings silently
+                    elif isinstance(part, int):
+                        cleaned_ids.append(part)
+
+            # Replace with cleaned list (may be empty to clear tags)
+            data['tag_ids'] = cleaned_ids
+
         return super().to_internal_value(data)
     
     def create(self, validated_data):
