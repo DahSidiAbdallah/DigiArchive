@@ -211,6 +211,8 @@ export default function DocumentUpload({ onSuccess, onCancel, isOpen }: Document
         
         if (onSuccess && isMounted.current) {
           console.log('Document upload successful, calling onSuccess');
+          // Reset form and close modal
+          resetForm();
           onSuccess();
         }
       } else if (isMounted.current) {

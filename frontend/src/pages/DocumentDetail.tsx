@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Document, getDocument, deleteDocument, processDocumentOCR } from '@/services/document.service'
 import DocumentPreview from '@/components/DocumentPreview';
+import DocumentOCRView from '@/components/DocumentOCRView';
 import { useToast } from '@/contexts/ToastContext'
 import EditDocumentModal from '@/components/EditDocumentModal'
 
@@ -13,6 +14,8 @@ export default function DocumentDetail() {
   const [error, setError] = useState('');
   const [processingOCR, setProcessingOCR] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const { addToast } = useToast();
   
   // Document ID validation and fetch
   useEffect(() => {
@@ -262,6 +265,14 @@ export default function DocumentDetail() {
           )}
           <button
             type="button"
+            onClick={() => setEditModalOpen(true)}
+            className="inline-flex items-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+          >
+            <svg className="h-5 w-5 mr-2 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            Edit
+          </button>
+          <button
+            type="button"
             onClick={() => setDeleteConfirmOpen(true)}
             className="inline-flex items-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
           >
@@ -298,15 +309,12 @@ export default function DocumentDetail() {
               {document.id && <DocumentPreview documentId={document.id} />}
             </div>
           </div>
-          {document.is_ocr_processed && document.ocr_data && (
-            <div>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">OCR Content</h3>
-              <div className="mt-2 p-4 bg-gray-50 rounded-md overflow-auto max-h-72">
-                <pre className="text-xs text-gray-700 whitespace-pre-wrap">{document.ocr_data.full_text}</pre>
-              </div>
-              <p className="mt-1 text-xs text-gray-500">Processed on: {new Date(document.ocr_data.processed_at).toLocaleString()}</p>
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 mb-1">OCR Content</h3>
+            <div className="mt-2">
+              {document.id && <DocumentOCRView documentId={document.id} />}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -341,6 +349,24 @@ export default function DocumentDetail() {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Edit Document Modal */}
+      {document && (
+        <EditDocumentModal
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          document={document}
+          onDocumentUpdated={(updatedDocument) => {
+            setDocument(updatedDocument);
+            addToast({
+              title: 'Document Updated',
+              message: 'Document has been updated successfully',
+              type: 'success'
+            });
+            setEditModalOpen(false);
+          }}
+        />
       )}
     </div>
   );
