@@ -15,6 +15,10 @@ export interface Document {
   document_type: string;
   department?: number | Department | null;
   folder?: number | Folder | null;
+  department_details?: Department;  // Added for expanded department info
+  folder_details?: Folder;          // Added for expanded folder info
+  department_name?: string;         // Added for simplified department name access
+  folder_name?: string;             // Added for simplified folder name access
   file?: File | string;
   file_name?: string;
   file_size?: number;
@@ -45,6 +49,19 @@ export interface DocumentListResponse {
   previous: string | null;
   results: Document[];
 }
+
+/**
+ * Get document system diagnostics
+ */
+export const getDocumentDiagnostics = async (): Promise<any> => {
+  try {
+    const response = await api.get('/documents/diagnostic/');
+    return response.data;
+  } catch (error) {
+    console.error('Error getting document diagnostics:', error);
+    throw error;
+  }
+};
 
 /**
  * Get all documents with pagination
@@ -227,11 +244,28 @@ export const createDocument = async (document: Document): Promise<Document> => {
         if (key === 'file') {
           formData.append(key, value as File);
         } else if (key === 'tag_ids' && Array.isArray(value)) {
-          value.forEach(tagId => {
-            if (tagId !== undefined && tagId !== null) {
+          // Handle tag_ids in the same way for both create and update
+          if (value.length === 0) {
+            // Send empty value to clear all tags
+            formData.append('tag_ids', '');
+            console.log('Sending empty tag_ids array');
+          } else {
+            // Convert all values to numbers and filter out invalid ones
+            const numericTagIds = value
+              .map(tagId => {
+                if (typeof tagId === 'string') {
+                  return parseInt(tagId, 10);
+                }
+                return tagId;
+              })
+              .filter(tagId => typeof tagId === 'number' && !isNaN(tagId));
+              
+            // Add each tag ID separately (Django REST Framework expects this format)
+            numericTagIds.forEach(tagId => {
               formData.append('tag_ids', tagId.toString());
-            }
-          });
+              console.log(`Adding tag_id: ${tagId}`);
+            });
+          }
         } else if (value !== undefined && value !== null) {
           formData.append(key, value.toString());
         }
@@ -362,17 +396,69 @@ export const createDocument = async (document: Document): Promise<Document> => {
 /**
  * Update an existing document
  */
-export const updateDocument = async (id: number, document: Partial<Document>): Promise<Document> => {
-  // Always use FormData for consistent handling on the server side
+export const updateDocument = async (id: number, documentData: Partial<Document>): Promise<Document> => {
+  if (!id) {
+    throw new Error('Document ID is required for update');
+  }
+  
+  // FINAL SOLUTION: Always use JSON approach for updates with no file changes
+  // FormData has issues with array fields in some browsers/environments
+  if (!documentData.file) {
+    try {
+      console.log('Using JSON approach for document update...');
+      
+      // Create a clean JSON object for the request
+      const jsonData: Record<string, any> = {};
+      
+      // Process each field, ensuring proper formatting for tag_ids
+      Object.entries(documentData).forEach(([key, value]) => {
+        if (value === undefined || value === null) {
+          return;
+        }
+        
+        if (key === 'tag_ids' && Array.isArray(value)) {
+          // Ensure tag_ids are clean numbers for the Django REST Framework
+          jsonData[key] = value
+            .map(id => typeof id === 'string' ? parseInt(id, 10) : id)
+            .filter(id => typeof id === 'number' && !isNaN(id))
+            .map(id => Number(id)); // Ensure primitive values
+          
+          console.log('Tag IDs prepared for JSON request:', jsonData[key]);
+        } else {
+          jsonData[key] = value;
+        }
+      });
+      
+      console.log('Sending JSON update:', jsonData);
+      
+      const response = await api.patch<Document>(`/documents/${id}/`, jsonData);
+      
+      // Verify we got a 200 status to confirm the update was successful
+      if (response.status !== 200) {
+        console.warn(`Document update returned unexpected status: ${response.status}`);
+        throw new Error(`Unexpected response status: ${response.status}`);
+      }
+      
+      console.log('Document update successful with JSON:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('JSON update failed:', error);
+      if (error.response) {
+        console.error('Error response:', error.response.data);
+        console.error('Error status:', error.response.status);
+      }
+      throw error; // Re-throw for component handling
+    }
+  }
+  
+  // Only use FormData when we have a file to upload
+  console.log('Using FormData approach for document update with file...');
   const formData = new FormData();
   
-  // Log the document object being sent
-  console.log('Updating document with data:', document);
-  
-  // Process all fields properly
-  Object.entries(document).forEach(([key, value]) => {
-    // Skip undefined or null values
-    if (value === undefined || value === null) {
+  // Process all fields properly for FormData
+  Object.entries(documentData).forEach(([key, value]) => {
+    // Skip undefined or null values (except for department and folder which can be null)
+    if (value === undefined || (value === null && key !== 'department' && key !== 'folder')) {
       return;
     }
     
@@ -380,32 +466,29 @@ export const updateDocument = async (id: number, document: Partial<Document>): P
     if (key === 'file' && value instanceof File) {
       formData.append(key, value);
     } 
-    // Handle tag_ids specially - ensure they are always sent as numbers
+    // Handle tag_ids specially for Django REST Framework
     else if (key === 'tag_ids' && Array.isArray(value)) {
-      // Clear existing tags if empty array
+      // When sending tag_ids to Django REST Framework with PrimaryKeyRelatedField, we need to:
+      // 1. Convert all values to numbers
+      // 2. Append each tag ID separately with the SAME key name
+      
       if (value.length === 0) {
-        // For Django REST Framework, sending an empty list requires this format
-        formData.append('tag_ids', ''); 
+        // For empty arrays, Django DRF expects an empty string
+        formData.append('tag_ids', '');
         console.log('Sending empty tag_ids array');
       } else {
-        // Convert and validate all tag IDs before appending
+        // Convert all tag IDs to numbers and filter out invalid ones
         const numericTagIds = value
-          .map(tagId => {
-            // Convert to number if it's a string
-            if (typeof tagId === 'string') {
-              return parseInt(tagId, 10);
-            }
-            return tagId;
-          })
-          // Filter out any NaN values or non-numbers
+          .map(tagId => typeof tagId === 'string' ? parseInt(tagId, 10) : tagId)
           .filter(tagId => typeof tagId === 'number' && !isNaN(tagId));
         
         console.log('Numeric tag IDs after conversion:', numericTagIds);
-          
-        // Add each numeric tag ID to the form data
+        
+        // Add each tag ID as a separate value with the SAME key name
+        // This is the format Django REST Framework expects for ManyRelatedField
         numericTagIds.forEach(tagId => {
           formData.append('tag_ids', tagId.toString());
-          console.log(`Adding tag_id: ${tagId} (${typeof tagId})`);
+          console.log(`Adding tag_id: ${tagId}`);
         });
       }
     } 
@@ -422,29 +505,63 @@ export const updateDocument = async (id: number, document: Partial<Document>): P
       }
     }
     // Handle document_type - send value directly
-    else if (key === 'document_type') {
+    else if (key === 'document_type' && value) {
       formData.append(key, value.toString());
       console.log(`Adding document_type: "${value}"`);
     }
-    // Handle all other fields
-    else {
+    // Handle all other fields - ensure value is not null
+    else if (value !== null) {
       formData.append(key, value.toString());
     }
   });
 
   // Log the FormData for debugging (FormData can't be directly logged)
   console.log('FormData entries:');
+  const formDataLog: Record<string, string | string[]> = {};
   for (const pair of formData.entries()) {
-    console.log(pair[0], pair[1]);
+    const key = pair[0];
+    const value = pair[1].toString();
+    console.log(key, value);
+    
+    // Build a map to better visualize what we're sending
+    if (key in formDataLog) {
+      const existingValue = formDataLog[key];
+      if (Array.isArray(existingValue)) {
+        existingValue.push(value);
+      } else {
+        formDataLog[key] = [existingValue, value];
+      }
+    } else {
+      formDataLog[key] = value;
+    }
   }
+  console.log('FormData as object:', formDataLog);
   
   try {
+    console.log(`Sending PATCH request to /documents/${id}/ with FormData`);
+    
+    // Add detailed debug logging for the exact raw form data being sent
+    console.log('FormData fields:');
+    formData.forEach((value, key) => {
+      if (key === 'file' && value instanceof File) {
+        console.log(`${key}: [File object] name=${value.name}, size=${value.size}, type=${value.type}`);
+      } else {
+        console.log(`${key}: ${value}`);
+      }
+    });
+    
     // Send the request with proper headers
     const response = await api.patch<Document>(`/documents/${id}/`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
+    
+    // Verify we got a 200 status to confirm the update was successful
+    if (response.status !== 200) {
+      console.warn(`Document update returned unexpected status: ${response.status}`);
+      throw new Error(`Unexpected response status: ${response.status}`);
+    }
     
     console.log('Document update successful:', response.data);
     return response.data;
@@ -456,6 +573,15 @@ export const updateDocument = async (id: number, document: Partial<Document>): P
       console.error('Error response status:', error.response.status);
       console.error('Error response data:', error.response.data);
       console.error('Error response headers:', error.response.headers);
+      
+      // Special logging for tag_ids errors
+      if (error.response.data && error.response.data.tag_ids) {
+        console.error('Tag IDs error:', error.response.data.tag_ids);
+        console.error('FormData tag_ids values:');
+        formData.getAll('tag_ids').forEach(value => {
+          console.error(`- ${value} (type: ${typeof value})`);
+        });
+      }
     }
     
     throw error; // Re-throw for component handling

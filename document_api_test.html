@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document API Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #333;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+    }
+    .error {
+      color: #d32f2f;
+    }
+    .success {
+      color: #388e3c;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Document API Test</h1>
+    
+    <div class="form-group">
+      <label for="token">Authentication Token</label>
+      <input type="text" id="token" placeholder="Enter your auth token">
+    </div>
+    
+    <div class="form-group">
+      <label for="documentId">Document ID</label>
+      <input type="number" id="documentId" value="1">
+    </div>
+    
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" id="title" value="TD Béton - Updated Document">
+    </div>
+    
+    <div class="form-group">
+      <label for="documentType">Document Type</label>
+      <select id="documentType">
+        <option value="invoice">Invoice (Facture)</option>
+        <option value="bill_of_lading">Bill of Lading (BL)</option>
+        <option value="transfer_request">Transfer Request (Demande de transfert)</option>
+        <option value="contract">Contract (Contrat)</option>
+        <option value="certificate">Certificate (Certificat)</option>
+        <option value="report" selected>Report (Rapport)</option>
+        <option value="other">Other (Autre)</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea id="description">This document was updated using a direct API call</textarea>
+    </div>
+    
+    <div class="form-group">
+      <label for="departmentId">Department ID</label>
+      <input type="number" id="departmentId" value="1">
+    </div>
+    
+    <div class="form-group">
+      <label for="folderId">Folder ID</label>
+      <input type="number" id="folderId" value="1">
+    </div>
+    
+    <div class="form-group">
+      <label for="tagIds">Tag IDs (comma-separated)</label>
+      <input type="text" id="tagIds" value="1,2">
+    </div>
+    
+    <button id="getDocumentBtn">Get Document</button>
+    <button id="updateDocumentBtn">Update Document</button>
+    
+    <div id="result" class="result">
+      Results will appear here...
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const apiUrl = "http://localhost:8000/api";
+      const resultDiv = document.getElementById('result');
+      
+      // Function to display results
+      function displayResult(data, success = true) {
+        resultDiv.innerHTML = '';
+        resultDiv.className = success ? 'result success' : 'result error';
+        
+        if (typeof data === 'object') {
+          resultDiv.textContent = JSON.stringify(data, null, 2);
+        } else {
+          resultDiv.textContent = data;
+        }
+      }
+      
+      // Function to get authentication headers
+      function getHeaders() {
+        const token = document.getElementById('token').value.trim();
+        if (!token) {
+          displayResult('Please enter an authentication token', false);
+          return null;
+        }
+        
+        // Clean up the token - remove any quotes or extra spaces
+        const cleanToken = token.replace(/['"]/g, '').trim();
+        
+        // Log the token for debugging (careful with sensitive data)
+        console.log('Using token (first few chars):', cleanToken.substring(0, 5) + '...');
+        
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanToken}`
+        };
+      }
+      
+      // Handle get document button click
+      document.getElementById('getDocumentBtn').addEventListener('click', async function() {
+        const headers = getHeaders();
+        if (!headers) return;
+        
+        const documentId = document.getElementById('documentId').value;
+        if (!documentId) {
+          displayResult('Please enter a document ID', false);
+          return;
+        }
+        
+        try {
+          resultDiv.textContent = 'Loading...';
+          
+          // Log request details for debugging
+          console.log('Request URL:', `${apiUrl}/documents/${documentId}/`);
+          console.log('Request headers:', headers);
+          
+          const response = await fetch(`${apiUrl}/documents/${documentId}/`, {
+            method: 'GET',
+            headers: headers
+          });
+          
+          const data = await response.json();
+          
+          if (response.ok) {
+            displayResult(data, true);
+            
+            // Update form with current values
+            if (data.title) document.getElementById('title').value = data.title;
+            if (data.document_type) document.getElementById('documentType').value = data.document_type;
+            if (data.description) document.getElementById('description').value = data.description;
+            if (data.department) document.getElementById('departmentId').value = data.department;
+            if (data.folder) document.getElementById('folderId').value = data.folder;
+            if (data.tags && Array.isArray(data.tags)) {
+              const tagIds = data.tags.map(tag => tag.id).join(',');
+              document.getElementById('tagIds').value = tagIds;
+            }
+          } else {
+            displayResult(data, false);
+          }
+        } catch (error) {
+          displayResult(`Error: ${error.message}`, false);
+        }
+      });
+      
+      // Handle update document button click
+      document.getElementById('updateDocumentBtn').addEventListener('click', async function() {
+        const headers = getHeaders();
+        if (!headers) return;
+        
+        const documentId = document.getElementById('documentId').value;
+        if (!documentId) {
+          displayResult('Please enter a document ID', false);
+          return;
+        }
+        
+        // Get values from form
+        const title = document.getElementById('title').value;
+        const documentType = document.getElementById('documentType').value;
+        const description = document.getElementById('description').value;
+        const departmentId = document.getElementById('departmentId').value;
+        const folderId = document.getElementById('folderId').value;
+        const tagIdsText = document.getElementById('tagIds').value;
+        
+        // Prepare update data
+        const updateData = {
+          title: title,
+          document_type: documentType,
+          description: description
+        };
+        
+        // Add department if provided
+        if (departmentId) {
+          updateData.department = parseInt(departmentId);
+        }
+        
+        // Add folder if provided
+        if (folderId) {
+          updateData.folder = parseInt(folderId);
+        }
+        
+        // Add tag_ids if provided
+        if (tagIdsText) {
+          const tagIds = tagIdsText.split(',')
+            .map(id => id.trim())
+            .filter(id => id)
+            .map(id => parseInt(id));
+            
+          if (tagIds.length > 0) {
+            updateData.tag_ids = tagIds;
+          }
+        }
+        
+        try {
+          resultDiv.textContent = 'Updating...';
+          const response = await fetch(`${apiUrl}/documents/${documentId}/`, {
+            method: 'PATCH',
+            headers: headers,
+            body: JSON.stringify(updateData)
+          });
+          
+          const data = await response.json();
+          
+          if (response.ok) {
+            displayResult(data, true);
+          } else {
+            displayResult(data, false);
+          }
+        } catch (error) {
+          displayResult(`Error: ${error.message}`, false);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

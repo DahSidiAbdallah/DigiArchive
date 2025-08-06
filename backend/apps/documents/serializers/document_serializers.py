@@ -31,6 +31,8 @@ class DocumentSerializer(serializers.ModelSerializer):
     uploaded_by_username = serializers.CharField(source='uploaded_by.username', read_only=True)
     department_details = DepartmentSerializer(source='department', read_only=True)
     folder_details = FolderSerializer(source='folder', read_only=True)
+    department_name = serializers.SerializerMethodField(read_only=True)
+    folder_name = serializers.SerializerMethodField(read_only=True)
     tag_ids = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), 
         write_only=True, 
@@ -38,16 +40,42 @@ class DocumentSerializer(serializers.ModelSerializer):
         required=False
     )
     
+    def get_department_name(self, obj):
+        """Get the department name."""
+        return obj.department.name if obj.department else None
+        
+    def get_folder_name(self, obj):
+        """Get the folder name."""
+        return obj.folder.name if obj.folder else None
+    
     class Meta:
         model = Document
         fields = [
             'id', 'title', 'document_type', 'file', 'description', 
             'reference_number', 'date', 'department', 'department_details',
-            'folder', 'folder_details', 'tags', 'tag_ids', 'uploaded_by', 
-            'uploaded_by_username', 'created_at', 'updated_at', 'content_text', 
-            'is_ocr_processed', 'ocr_data'
+            'department_name', 'folder', 'folder_details', 'folder_name',
+            'tags', 'tag_ids', 'uploaded_by', 'uploaded_by_username', 
+            'created_at', 'updated_at', 'content_text', 'is_ocr_processed', 'ocr_data'
         ]
         read_only_fields = ['id', 'uploaded_by', 'created_at', 'updated_at', 'content_text', 'is_ocr_processed']
+    
+    def to_internal_value(self, data):
+        """Convert tag_ids if they're sent as strings."""
+        if 'tag_ids' in data and isinstance(data['tag_ids'], list):
+            try:
+                # Convert string tag IDs to integers if needed
+                tag_ids = []
+                for tag_id in data['tag_ids']:
+                    if isinstance(tag_id, str) and tag_id.isdigit():
+                        tag_ids.append(int(tag_id))
+                    else:
+                        tag_ids.append(tag_id)
+                data['tag_ids'] = tag_ids
+            except Exception as e:
+                # Log the error but continue processing
+                print(f"Error processing tag_ids: {e}")
+        
+        return super().to_internal_value(data)
     
     def create(self, validated_data):
         """Create a document with tags."""
@@ -55,6 +83,21 @@ class DocumentSerializer(serializers.ModelSerializer):
         
         # Set the uploaded_by field to the current user
         validated_data['uploaded_by'] = self.context['request'].user
+        
+        # Check for folder-department consistency
+        folder = validated_data.get('folder')
+        department = validated_data.get('department')
+        
+        if folder and department:
+            # If both are provided, ensure folder belongs to department
+            if folder.department.pk != department.pk:
+                # Folder doesn't match department, raise error
+                raise serializers.ValidationError({
+                    'folder': f"Folder '{folder.name}' does not belong to department '{department.name}'"
+                })
+        elif folder and not department:
+            # If only folder is provided, set department from folder
+            validated_data['department'] = folder.department
         
         document = Document.objects.create(**validated_data)
         
@@ -68,6 +111,21 @@ class DocumentSerializer(serializers.ModelSerializer):
         """Update a document with tags."""
         tag_ids = validated_data.pop('tag_ids', None)
         
+        # Check for folder-department consistency
+        folder = validated_data.get('folder')
+        department = validated_data.get('department')
+        
+        if folder and department:
+            # If both are provided, ensure folder belongs to department
+            if folder.department.pk != department.pk:
+                # Folder doesn't match department, raise error
+                raise serializers.ValidationError({
+                    'folder': f"Folder '{folder.name}' does not belong to department '{department.name}'"
+                })
+        elif folder and not department:
+            # If only folder is provided, set department from folder
+            validated_data['department'] = folder.department
+        
         # Update document fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -76,6 +134,10 @@ class DocumentSerializer(serializers.ModelSerializer):
         # Update tags if provided
         if tag_ids is not None:
             instance.tags.set(tag_ids)
+        
+        # Refresh the instance to make sure we have the latest data
+        # This is important to ensure we return the full object with related objects
+        instance = Document.objects.select_related('department', 'folder').get(pk=instance.pk)
         
         return instance
 

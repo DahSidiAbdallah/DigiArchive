@@ -52,6 +52,8 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
+      // IMPORTANT: Format depends on backend authentication method
+      // For Simple JWT, use 'Bearer'
       config.headers.Authorization = `Bearer ${token}`;
       console.log(`API Request to ${config.url} with auth token`);
     } else {

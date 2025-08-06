@@ -1,19 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments } from '@/hooks/useDocuments';
 import DocumentListItem from '@/components/DocumentListItem';
 import DepartmentSelector from '@/components/DepartmentSelector';
 import FolderManager from '@/components/FolderManager';
+import DocumentUpload from '@/components/DocumentUpload';
+import { useLocation } from 'react-router-dom';
 
 export default function Documents() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
   // Local UI state for filters/search
   const [searchInput, setSearchInput] = useState('');
   const [documentType, setDocumentType] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [folderRefreshKey, setFolderRefreshKey] = useState(0);
+  
+  // Check if we're on the upload route
+  useEffect(() => {
+    if (location.pathname === '/documents/upload') {
+      setIsUploadModalOpen(true);
+    }
+  }, [location.pathname]);
 
   // Compose filters for useDocuments
   const filters = {
@@ -33,10 +44,8 @@ export default function Documents() {
     hasPrevious,
     nextPage,
     previousPage,
-    updateSearch,
-    updateFilters,
     refreshDocuments,
-  } = useDocuments(1, '', filters);
+  } = useDocuments(1, searchInput, filters);
 
   // If not authenticated, show login message
   if (!isAuthenticated) {
@@ -58,7 +67,7 @@ export default function Documents() {
         <div className="flex gap-3">
           <button
             type="button"
-
+            onClick={() => setIsUploadModalOpen(true)}
             className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2 text-base font-semibold text-white shadow hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -183,7 +192,7 @@ export default function Documents() {
               <div className="mt-6">
                 <button
                   type="button"
-                  
+                  onClick={() => setIsUploadModalOpen(true)}
                   className="inline-flex items-center rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
                 >
                   <svg className="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -284,6 +293,16 @@ export default function Documents() {
         onFolderCreated={(folder) => {
           setFolderRefreshKey((k) => k + 1);
           setSelectedFolder(folder.id);
+        }}
+      />
+      
+      {/* Document Upload Modal */}
+      <DocumentUpload
+        isOpen={isUploadModalOpen}
+        onCancel={() => setIsUploadModalOpen(false)}
+        onSuccess={() => {
+          setIsUploadModalOpen(false);
+          refreshDocuments();
         }}
       />
     </div>

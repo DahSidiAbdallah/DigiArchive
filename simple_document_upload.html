@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DigiArchive Simple Document Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        input[type="file"] {
+            border: 1px solid #ddd;
+            padding: 8px;
+            width: 100%;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .note {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-left: 4px solid #3498db;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Simple Document Upload Form</h1>
+    
+    <div class="note">
+        <p><strong>Note:</strong> This is a simplified document upload form that works when the main form has issues with tags. 
+        Use this form to upload documents without tags. You can add tags later by editing the document.</p>
+    </div>
+
+    <div id="message"></div>
+    
+    <form id="uploadForm">
+        <div class="form-group">
+            <label for="title">Document Title (required)</label>
+            <input type="text" id="title" name="title" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="documentType">Document Type</label>
+            <select id="documentType" name="document_type">
+                <option value="invoice">Invoice (Facture)</option>
+                <option value="bill_of_lading">Bill of Lading (BL)</option>
+                <option value="transfer_request">Transfer Request</option>
+                <option value="contract">Contract</option>
+                <option value="certificate">Certificate</option>
+                <option value="report">Report</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="department">Department</label>
+            <select id="department" name="department">
+                <option value="">-- Select Department --</option>
+                <!-- Will be populated by JavaScript -->
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="folder">Folder</label>
+            <select id="folder" name="folder">
+                <option value="">-- Select Folder --</option>
+                <!-- Will be populated based on department selection -->
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="3"></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="file">Document File (PDF, JPG, PNG) (required)</label>
+            <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
+        </div>
+        
+        <button type="submit">Upload Document</button>
+    </form>
+
+    <script>
+        // Get auth token from localStorage
+        const token = localStorage.getItem('auth_token');
+        const apiBaseUrl = window.location.origin + '/api'; // Assuming API is on same domain
+
+        // If no token, redirect to login
+        if (!token) {
+            document.getElementById('message').innerHTML = '<p class="error">Please log in first!</p>';
+        }
+
+        // Load departments when page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!token) return;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl}/departments/`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load departments');
+                }
+                
+                const departments = await response.json();
+                const departmentSelect = document.getElementById('department');
+                
+                departments.forEach(dept => {
+                    const option = document.createElement('option');
+                    option.value = dept.id;
+                    option.textContent = dept.name;
+                    departmentSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading departments:', error);
+            }
+        });
+
+        // Load folders when department changes
+        document.getElementById('department').addEventListener('change', async (e) => {
+            const departmentId = e.target.value;
+            const folderSelect = document.getElementById('folder');
+            
+            // Clear existing options
+            folderSelect.innerHTML = '<option value="">-- Select Folder --</option>';
+            
+            if (!departmentId) return;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl}/folders/?department_id=${departmentId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load folders');
+                }
+                
+                const folders = await response.json();
+                
+                folders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder.id;
+                    option.textContent = folder.name;
+                    folderSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading folders:', error);
+            }
+        });
+
+        // Handle form submission
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = '<p>Uploading document...</p>';
+            
+            const formData = new FormData();
+            formData.append('title', document.getElementById('title').value);
+            formData.append('document_type', document.getElementById('documentType').value);
+            
+            const departmentId = document.getElementById('department').value;
+            if (departmentId) {
+                formData.append('department', departmentId);
+            }
+            
+            const folderId = document.getElementById('folder').value;
+            if (folderId) {
+                formData.append('folder', folderId);
+            }
+            
+            const description = document.getElementById('description').value;
+            if (description) {
+                formData.append('description', description);
+            }
+            
+            const fileInput = document.getElementById('file');
+            if (fileInput.files.length > 0) {
+                formData.append('file', fileInput.files[0]);
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl}/documents/simple_upload/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Upload failed with status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                messageDiv.innerHTML = `
+                    <p class="success">Document uploaded successfully!</p>
+                    <p>Title: ${result.title}</p>
+                    <p>ID: ${result.id}</p>
+                    <p><a href="/">Return to dashboard</a></p>
+                `;
+                
+                // Reset the form
+                document.getElementById('uploadForm').reset();
+            } catch (error) {
+                console.error('Error uploading document:', error);
+                messageDiv.innerHTML = `<p class="error">Error uploading document: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

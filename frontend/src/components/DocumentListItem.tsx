@@ -75,16 +75,24 @@ export default function DocumentListItem({ document, searchQuery, onDelete, onEd
                 <span className="font-medium text-gray-500">Type:</span>
                 <span>{formatDocumentType(document.document_type)}</span>
               </div>
-              {document.department && (
+              {(document.department || document.department_details) && (
                 <div className="flex items-center gap-1">
                   <span className="font-medium text-gray-500">Dept:</span>
-                  <span>{document.department.name}</span>
+                  <span>
+                    {typeof document.department === 'object' && document.department !== null && 'name' in document.department
+                      ? document.department.name
+                      : document.department_details?.name || 'Sans département'}
+                  </span>
                 </div>
               )}
-              {document.folder && (
+              {(document.folder || document.folder_details) && (
                 <div className="flex items-center gap-1">
                   <span className="font-medium text-gray-500">Folder:</span>
-                  <span>{document.folder.name}</span>
+                  <span>
+                    {typeof document.folder === 'object' && document.folder !== null && 'name' in document.folder
+                      ? document.folder.name
+                      : document.folder_details?.name || 'Sans dossier'}
+                  </span>
                 </div>
               )}
               {document.reference_number && (

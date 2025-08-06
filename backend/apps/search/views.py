@@ -2,7 +2,7 @@
 
 from rest_framework import views, status, permissions
 from rest_framework.response import Response
-from apps.documents.serializers.document_serializers import DocumentListSerializer
+from apps.documents.serializers.document_serializers import DocumentListSerializer, DocumentSerializer
 from apps.search.utils import advanced_search, search_suggestions
 
 
@@ -17,14 +17,18 @@ class AdvancedSearchView(views.APIView):
         # Get documents matching search criteria
         documents = advanced_search(request.query_params, request.user)
         
+        # Check if we need to include related details
+        include_related = request.query_params.get('include_related_details', '').lower() == 'true'
+        serializer_class = DocumentSerializer if include_related else DocumentListSerializer
+        
         # Paginate results
         page = self.paginate_queryset(documents)
         if page is not None:
-            serializer = DocumentListSerializer(page, many=True)
+            serializer = serializer_class(page, many=True, context={'request': request})
             return self.get_paginated_response(serializer.data)
         
         # If no pagination, return all results
-        serializer = DocumentListSerializer(documents, many=True)
+        serializer = serializer_class(documents, many=True, context={'request': request})
         return Response(serializer.data)
     
     @property

@@ -16,7 +16,7 @@ export interface Department {
 export interface Folder {
   id: number;
   name: string;
-  department: number;
+  department: number | Department;  // Department can be either the ID or the full department object
   parent: number | null;
   description: string;
   path: string;

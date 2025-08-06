@@ -91,7 +91,8 @@ class Document(models.Model):
         return f'{base_path}/{filename}'
     
     def save(self, *args, **kwargs):
-        """Custom save method to set department from user if not provided."""
+        """Custom save method to set department from user if not provided and ensure folder belongs to department."""
+        # Set department from user if not provided
         if not self.department and self.uploaded_by:
             # Get the user's department string
             user_dept = getattr(self.uploaded_by, 'department', '')
@@ -107,6 +108,13 @@ class Document(models.Model):
                     except (Department.DoesNotExist, Department.MultipleObjectsReturned):
                         # Could not find a unique department match, proceed without setting it
                         pass
+        
+        # Ensure folder belongs to department
+        if self.folder and self.department and hasattr(self.folder, 'department') and hasattr(self.department, 'pk'):
+            if self.folder.department.pk != self.department.pk:
+                print(f"Warning: Folder {self.folder} belongs to department {self.folder.department}, not {self.department}")
+                # Reset folder if it doesn't belong to the document's department
+                self.folder = None
         
         # Now call the original save method
         super().save(*args, **kwargs)

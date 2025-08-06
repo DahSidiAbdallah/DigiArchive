@@ -17,6 +17,7 @@ export interface SearchParams {
   department_id?: number;
   folder_id?: number;
   content_query?: string;
+  include_related_details?: boolean;  // Added to retrieve full department and folder info
 }
 
 export interface SearchSuggestion {
@@ -79,6 +80,10 @@ export const advancedSearch = async (params: SearchParams): Promise<DocumentList
   
   if (params.page) {
     queryParams.append('page', params.page.toString());
+  }
+  
+  if (params.include_related_details) {
+    queryParams.append('include_related_details', 'true');
   }
   
   const response = await api.get<DocumentListResponse>(`/search/advanced/?${queryParams.toString()}`);

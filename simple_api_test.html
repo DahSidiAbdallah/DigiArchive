@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigiArchive Simple API Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #333;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    input {
+      padding: 8px;
+      width: 100%;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+    .error {
+      color: red;
+    }
+    .success {
+      color: green;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>DigiArchive Simple API Test</h1>
+
+    <h2>Authentication</h2>
+    <div>
+      <label for="token">Auth Token:</label>
+      <input type="text" id="token" placeholder="Paste your authentication token here">
+    </div>
+
+    <h2>API Tests</h2>
+    <button id="testAuthBtn">Test Authentication</button>
+    <button id="listDocsBtn">List Documents</button>
+    <button id="listTagsBtn">List Tags</button>
+    <button id="listDeptsBtn">List Departments</button>
+
+    <h2>Update Document</h2>
+    <div>
+      <label for="docId">Document ID:</label>
+      <input type="number" id="docId" value="1">
+    </div>
+    <button id="updateDocBtn">Update Document</button>
+
+    <h2>Results</h2>
+    <pre id="results">Results will appear here...</pre>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const BASE_URL = 'http://localhost:8000/api';
+      const resultsElement = document.getElementById('results');
+      
+      function showResult(data, isError = false) {
+        if (typeof data === 'object') {
+          resultsElement.textContent = JSON.stringify(data, null, 2);
+        } else {
+          resultsElement.textContent = data;
+        }
+        resultsElement.className = isError ? 'error' : '';
+      }
+
+      function getToken() {
+        const token = document.getElementById('token').value.trim();
+        if (!token) {
+          showResult('Please enter an authentication token', true);
+          return null;
+        }
+        return token;
+      }
+
+      async function makeApiRequest(endpoint, method = 'GET', data = null) {
+        const token = getToken();
+        if (!token) return;
+
+        try {
+          const headers = {
+            'Authorization': `Bearer ${token}`
+          };
+          
+          const options = {
+            method,
+            headers
+          };
+          
+          if (data && method !== 'GET') {
+            options.headers['Content-Type'] = 'application/json';
+            options.body = JSON.stringify(data);
+          }
+          
+          console.log(`Making ${method} request to ${endpoint}`);
+          console.log('Request options:', options);
+          
+          const response = await fetch(`${BASE_URL}${endpoint}`, options);
+          const responseData = await response.json();
+          
+          console.log('Response status:', response.status);
+          console.log('Response data:', responseData);
+          
+          showResult(responseData, !response.ok);
+          return responseData;
+        } catch (error) {
+          console.error('API request failed:', error);
+          showResult(`API request failed: ${error.message}`, true);
+        }
+      }
+
+      // Test Authentication
+      document.getElementById('testAuthBtn').addEventListener('click', () => {
+        makeApiRequest('/users/me/');
+      });
+      
+      // List Documents
+      document.getElementById('listDocsBtn').addEventListener('click', () => {
+        makeApiRequest('/documents/');
+      });
+      
+      // List Tags
+      document.getElementById('listTagsBtn').addEventListener('click', () => {
+        makeApiRequest('/tags/');
+      });
+      
+      // List Departments
+      document.getElementById('listDeptsBtn').addEventListener('click', () => {
+        makeApiRequest('/departments/');
+      });
+      
+      // Update Document
+      document.getElementById('updateDocBtn').addEventListener('click', () => {
+        const docId = document.getElementById('docId').value;
+        if (!docId) {
+          showResult('Please enter a document ID', true);
+          return;
+        }
+        
+        const updateData = {
+          title: "Updated via Simple API Test",
+          document_type: "report",
+          tag_ids: [1, 2] // Adjust these IDs as needed
+        };
+        
+        makeApiRequest(`/documents/${docId}/`, 'PATCH', updateData);
+      });
+    });
+  </script>
+</body>
+</html>

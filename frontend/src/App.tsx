@@ -12,6 +12,8 @@ import NotFound from '@/pages/NotFound'
 import Profile from '@/pages/Profile'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AuthProvider } from '@/hooks/useAuth'
+// Import the API test component
+import { ApiTestComponent } from './ApiTestComponent'
 
 function App() {
   return (
@@ -28,11 +30,14 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="documents">
               <Route index element={<Documents />} />
+              <Route path="upload" element={<Documents />} />
               <Route path=":id" element={<EnhancedDocumentDetail />} />
             </Route>
             <Route path="search" element={<AdvancedSearch />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />
+            {/* API test route */}
+            <Route path="api-test" element={<ApiTestComponent />} />
           </Route>
           
           {/* Fallback routes */}

@@ -16,30 +16,51 @@ def advanced_search(query_params, user=None):
         QuerySet of Document objects matching the search criteria
     """
     # Start with all documents or user's documents
+    # Always include department and folder for better frontend display
     if user and not user.is_staff:
-        documents = Document.objects.filter(uploaded_by=user)
+        documents = Document.objects.select_related('department', 'folder').filter(uploaded_by=user)
     else:
-        documents = Document.objects.all()
+        documents = Document.objects.select_related('department', 'folder').all()
     
     # Text search (across multiple fields)
     text_query = query_params.get('q', '')
     if text_query:
+        # Include full OCR text in search via document's related ocr_data
         documents = documents.filter(
             Q(title__icontains=text_query) |
             Q(reference_number__icontains=text_query) |
             Q(description__icontains=text_query) |
-            Q(content_text__icontains=text_query)
+            Q(content_text__icontains=text_query) |
+            Q(ocr_data__full_text__icontains=text_query)
         )
     
     # Department filter
     department_id = query_params.get('department_id', '')
     if department_id:
-        documents = documents.filter(department_id=department_id)
+        try:
+            # Try to convert to integer and filter
+            dept_id = int(department_id)
+            documents = documents.filter(department_id=dept_id)
+            print(f"Filtering by department ID: {dept_id}, remaining documents: {documents.count()}")
+            # Print first few documents for debugging
+            for doc in documents[:5]:
+                print(f"Document in dept {dept_id}: {doc.pk} - {doc.title} - dept: {doc.department.pk if doc.department else None}")
+        except (ValueError, TypeError):
+            print(f"Invalid department ID: {department_id}")
     
     # Folder filter
     folder_id = query_params.get('folder_id', '')
     if folder_id:
-        documents = documents.filter(folder_id=folder_id)
+        try:
+            # Try to convert to integer and filter
+            fld_id = int(folder_id)
+            documents = documents.filter(folder_id=fld_id)
+            print(f"Filtering by folder ID: {fld_id}, remaining documents: {documents.count()}")
+            # Print first few documents for debugging
+            for doc in documents[:5]:
+                print(f"Document in folder {fld_id}: {doc.pk} - {doc.title} - folder: {doc.folder.pk if doc.folder else None}")
+        except (ValueError, TypeError):
+            print(f"Invalid folder ID: {folder_id}")
     
     # Content-specific search
     content_query = query_params.get('content_query', '')

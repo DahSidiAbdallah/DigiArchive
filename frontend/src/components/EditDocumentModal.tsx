@@ -54,10 +54,17 @@ export default function EditDocumentModal({
       // Extract tag IDs as numbers to ensure they're properly handled
       const tagIds = document.tags?.map(tag => {
         if (tag.id !== undefined) {
-          return typeof tag.id === 'string' ? parseInt(tag.id) : tag.id;
+          // Make sure we're working with numbers
+          const numericId = typeof tag.id === 'string' ? parseInt(tag.id) : tag.id;
+          if (!isNaN(numericId)) {
+            return numericId;
+          }
         }
         return null;
-      }).filter(id => id !== null && !isNaN(id as number)) as number[] || [];
+      }).filter(id => id !== null) as number[] || [];
+      
+      // Log the extracted tag IDs for debugging
+      console.log('Extracted tag IDs:', tagIds, 'from tags:', document.tags);
       
       console.log('Setting form with document type:', cleanDocType);
       console.log('Setting form with tag IDs:', tagIds);
@@ -211,31 +218,47 @@ export default function EditDocumentModal({
       updateData.folder = formData.folder ? parseInt(formData.folder) : null;
       
       // Always include tag_ids as a clean array of numbers
-      updateData.tag_ids = [];
-      
-      if (Array.isArray(formData.tag_ids) && formData.tag_ids.length > 0) {
-        // Convert all tag IDs to numbers, filtering out any invalid values
-        updateData.tag_ids = formData.tag_ids
-          .map(id => {
-            // If it's a string, try to parse it
-            if (typeof id === 'string') {
-              return parseInt(id, 10);
-            } 
-            // If it's already a number, just return it
-            else if (typeof id === 'number') {
-              return id;
-            }
-            return null;
-          })
-          // Remove any null values or NaN results
-          .filter(id => id !== null && !isNaN(id as number)) as number[];
-      }
+      // We'll do a single, clean process for tag_ids to avoid duplication or confusion
+      updateData.tag_ids = Array.isArray(formData.tag_ids) 
+        ? formData.tag_ids
+            // Convert any strings to numbers
+            .map(id => typeof id === 'string' ? parseInt(id, 10) : id)
+            // Filter out any invalid values
+            .filter(id => typeof id === 'number' && !isNaN(id))
+            // Ensure they're all primitive numbers (not objects)
+            .map(id => Number(id))
+        : [];
           
-      // Debug the actual tag_ids being sent
-      console.log('Tag IDs being sent:', updateData.tag_ids);
+      // Log the prepared tag_ids for debugging
+      console.log('Tag IDs prepared for submission:', updateData.tag_ids);
       
       console.log('Submitting document update:', updateData);
       const updatedDocument = await updateDocument(document.id, updateData)
+      
+      // Verify that the document was actually updated by checking important fields
+      const hasActualChanges = Object.keys(updateData).some(key => {
+        // Skip checking file since it's handled differently
+        if (key === 'file') return false;
+        
+        // For tag_ids, we need a deep comparison
+        if (key === 'tag_ids') {
+          const originalTagIds = document.tags?.map(tag => tag.id) || [];
+          const newTagIds = updateData.tag_ids || [];
+          
+          // Check if arrays have different lengths or different contents
+          if (originalTagIds.length !== newTagIds.length) return true;
+          return originalTagIds.some(id => !newTagIds.includes(id)) || 
+                 newTagIds.some((id: number) => !originalTagIds.includes(id));
+        }
+        
+        // For other fields, do a simple comparison
+        return document[key as keyof Document] !== updateData[key as keyof typeof updateData];
+      });
+      
+      if (!hasActualChanges && Object.keys(updateData).length > 0) {
+        console.warn('Document update may not have been applied. No changes detected in response.');
+      }
+      
       onDocumentUpdated(updatedDocument)
       showSuccess('Succès', 'Document mis à jour avec succès')
       resetFormState()

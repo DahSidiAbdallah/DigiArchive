@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JWT API Tester</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .panel {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    textarea {
+      min-height: 100px;
+      font-family: monospace;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .response {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>JWT API Tester</h1>
+    
+    <div class="panel">
+      <h2>Authentication</h2>
+      <div class="form-group">
+        <label for="token">JWT Token:</label>
+        <textarea id="token" placeholder="Paste your full JWT token here"></textarea>
+      </div>
+    </div>
+    
+    <div class="panel">
+      <h2>Request</h2>
+      <div class="form-group">
+        <label for="endpoint">API Endpoint:</label>
+        <select id="endpoint">
+          <option value="/documents/">Get all documents</option>
+          <option value="/documents/1/">Get document with ID 1</option>
+          <option value="/tags/">Get all tags</option>
+          <option value="/departments/">Get all departments</option>
+          <option value="/folders/">Get all folders</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="method">Method:</label>
+        <select id="method">
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+          <option value="PUT">PUT</option>
+          <option value="PATCH">PATCH</option>
+          <option value="DELETE">DELETE</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="requestBody">Request Body (for POST/PUT/PATCH):</label>
+        <textarea id="requestBody" placeholder='{"title": "Updated Title", "tag_ids": [1, 2]}'></textarea>
+      </div>
+      
+      <button id="sendRequest">Send Request</button>
+    </div>
+    
+    <div class="panel">
+      <h2>Response</h2>
+      <div id="responseTime"></div>
+      <div id="responseStatus"></div>
+      <div id="responseBody" class="response">Response will appear here...</div>
+    </div>
+
+    <!-- Preset tests -->
+    <div class="panel">
+      <h2>Quick Tests</h2>
+      <button id="testDocumentUpdate">Test Document Update</button>
+      <button id="testGetDocument">Test Get Document</button>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const apiBaseUrl = 'http://localhost:8000/api';
+      
+      // Elements
+      const tokenInput = document.getElementById('token');
+      const endpointSelect = document.getElementById('endpoint');
+      const methodSelect = document.getElementById('method');
+      const requestBodyInput = document.getElementById('requestBody');
+      const sendButton = document.getElementById('sendRequest');
+      const responseTimeEl = document.getElementById('responseTime');
+      const responseStatusEl = document.getElementById('responseStatus');
+      const responseBodyEl = document.getElementById('responseBody');
+      
+      // Check for token in localStorage
+      const tokenFromStorage = localStorage.getItem('token');
+      if (tokenFromStorage) {
+        tokenInput.value = tokenFromStorage;
+      }
+      
+      // Send request function
+      async function sendRequest() {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          showResponse('Please enter a JWT token', 'error');
+          return;
+        }
+        
+        // Save token to localStorage for convenience
+        localStorage.setItem('token', token);
+        
+        const endpoint = endpointSelect.value;
+        const method = methodSelect.value;
+        let requestBody = null;
+        
+        if (['POST', 'PUT', 'PATCH'].includes(method) && requestBodyInput.value.trim()) {
+          try {
+            requestBody = JSON.parse(requestBodyInput.value);
+          } catch (e) {
+            showResponse('Invalid JSON in request body: ' + e.message, 'error');
+            return;
+          }
+        }
+        
+        // Clear previous response
+        responseTimeEl.textContent = '';
+        responseStatusEl.textContent = '';
+        responseBodyEl.textContent = 'Sending request...';
+        responseBodyEl.className = 'response';
+        
+        const startTime = new Date();
+        
+        try {
+          console.log(`Making ${method} request to ${endpoint}`);
+          if (requestBody) {
+            console.log('Request body:', requestBody);
+          }
+          
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          };
+          
+          const requestOptions = {
+            method,
+            headers
+          };
+          
+          if (requestBody) {
+            requestOptions.body = JSON.stringify(requestBody);
+          }
+          
+          const response = await fetch(`${apiBaseUrl}${endpoint}`, requestOptions);
+          const endTime = new Date();
+          const duration = endTime - startTime;
+          
+          responseTimeEl.textContent = `Request took ${duration}ms`;
+          responseStatusEl.textContent = `Status: ${response.status} ${response.statusText}`;
+          responseStatusEl.className = response.ok ? 'success' : 'error';
+          
+          try {
+            const data = await response.json();
+            showResponse(JSON.stringify(data, null, 2), response.ok ? 'success' : 'error');
+          } catch (e) {
+            const text = await response.text();
+            showResponse(text || 'No response body', response.ok ? 'success' : 'error');
+          }
+        } catch (error) {
+          responseStatusEl.textContent = 'Request failed';
+          responseStatusEl.className = 'error';
+          showResponse(`Error: ${error.message}`, 'error');
+        }
+      }
+      
+      // Show response
+      function showResponse(text, type) {
+        responseBodyEl.textContent = text;
+        if (type === 'error') {
+          responseBodyEl.classList.add('error');
+        } else if (type === 'success') {
+          responseBodyEl.classList.add('success');
+        }
+      }
+      
+      // Event listeners
+      sendButton.addEventListener('click', sendRequest);
+      
+      // Test document update
+      document.getElementById('testDocumentUpdate').addEventListener('click', function() {
+        // Set up for document update test
+        endpointSelect.value = '/documents/1/';
+        methodSelect.value = 'PATCH';
+        requestBodyInput.value = JSON.stringify({
+          title: "TD Béton - Updated via API Test",
+          document_type: "report",
+          tag_ids: [1, 2]
+        }, null, 2);
+        
+        // Don't auto-send to allow user to review
+      });
+      
+      // Test get document
+      document.getElementById('testGetDocument').addEventListener('click', function() {
+        endpointSelect.value = '/documents/1/';
+        methodSelect.value = 'GET';
+        requestBodyInput.value = '';
+        sendRequest();
+      });
+    });
+  </script>
+</body>
+</html>

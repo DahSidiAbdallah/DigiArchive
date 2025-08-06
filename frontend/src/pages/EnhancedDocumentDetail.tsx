@@ -43,8 +43,21 @@ export default function EnhancedDocumentDetail() {
     setIsEditModalOpen(true)
   }
 
-  const handleDocumentUpdated = (updatedDocument: Document) => {
-    setDocument(updatedDocument)
+  const handleDocumentUpdated = async (updatedDocument: Document) => {
+    // After a document update, fetch the full document again to ensure we have all related details
+    if (updatedDocument && updatedDocument.id) {
+      try {
+        // Fetch the complete document with all related objects
+        const refreshedDoc = await getDocument(updatedDocument.id)
+        setDocument(refreshedDoc)
+      } catch (err) {
+        console.error('Error refreshing document after update:', err)
+        // Still set the document from the update response as a fallback
+        setDocument(updatedDocument)
+      }
+    } else {
+      setDocument(updatedDocument)
+    }
   }
 
   const handleDelete = async () => {
@@ -336,14 +349,22 @@ export default function EnhancedDocumentDetail() {
                 {document.department && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Département</dt>
-                    <dd className="text-sm text-gray-900">{document.department.name}</dd>
+                    <dd className="text-sm text-gray-900">
+                      {typeof document.department === 'object' && document.department !== null && 'name' in document.department
+                        ? document.department.name
+                        : document.department_details?.name || 'Chargement...'}
+                    </dd>
                   </div>
                 )}
 
                 {document.folder && (
                   <div>
                     <dt className="text-sm font-medium text-gray-500">Dossier</dt>
-                    <dd className="text-sm text-gray-900">{document.folder.name}</dd>
+                    <dd className="text-sm text-gray-900">
+                      {typeof document.folder === 'object' && document.folder !== null && 'name' in document.folder
+                        ? document.folder.name
+                        : document.folder_details?.name || 'Chargement...'}
+                    </dd>
                   </div>
                 )}
 
