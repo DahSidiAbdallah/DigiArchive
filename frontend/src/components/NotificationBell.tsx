@@ -126,7 +126,9 @@ export default function NotificationBell() {
     if (!isOpen) return null;
     
     return createPortal(
-      <div 
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         className="fixed z-[9999] mt-2 w-80 origin-top-right rounded-md bg-white py-1 shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none"
         style={{
           top: `${dropdownPosition.top}px`,
