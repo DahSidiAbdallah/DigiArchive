@@ -57,6 +57,22 @@ api.interceptors.request.use(
     } else {
       console.log(`API Request to ${config.url} without auth token`);
     }
+    
+    // Log request details for PATCH/PUT/POST requests
+    if (['patch', 'put', 'post'].includes(config.method?.toLowerCase() || '')) {
+      console.log(`${config.method?.toUpperCase()} request to ${config.url}`);
+      console.log('Request headers:', config.headers);
+      
+      // Log the request data - be careful with sensitive data
+      if (config.data) {
+        if (config.data instanceof FormData) {
+          console.log('Request contains FormData');
+        } else {
+          console.log('Request data:', config.data);
+        }
+      }
+    }
+    
     return config;
   },
   (error) => {
@@ -68,13 +84,40 @@ api.interceptors.request.use(
 // Response interceptor for API calls
 api.interceptors.response.use(
   (response) => {
+    // Log successful response details
+    console.log(`API Response from ${response.config.url}: ${response.status}`);
+    if (response.data) {
+      console.log('Response data:', response.data);
+    }
     return response;
   },
   async (error) => {
+    // Log detailed error information
+    console.error('API Error:', error.message);
+    
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error('Error status:', error.response.status);
+      console.error('Error headers:', error.response.headers);
+      console.error('Error data:', error.response.data);
+      
+      // Additional logging for specific status codes
+      if (error.response.status === 400) {
+        console.error('Bad Request (400) Details:', JSON.stringify(error.response.data, null, 2));
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('Error request:', error.request);
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error('Error message:', error.message);
+    }
+    
     const originalRequest = error.config;
 
     // If error is 401 and not already retrying
-    if (error.response.status === 401 && !originalRequest._retry) {
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {

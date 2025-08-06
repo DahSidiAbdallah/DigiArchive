@@ -8,6 +8,11 @@ class FolderSerializer(serializers.ModelSerializer):
     """Serializer for Folder model."""
     
     path = serializers.SerializerMethodField()
+    parent = serializers.PrimaryKeyRelatedField(
+        queryset=Folder.objects.all(),
+        required=False,
+        allow_null=True
+    )
     
     class Meta:
         model = Folder

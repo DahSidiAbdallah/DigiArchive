@@ -31,6 +31,21 @@ def advanced_search(query_params, user=None):
             Q(content_text__icontains=text_query)
         )
     
+    # Department filter
+    department_id = query_params.get('department_id', '')
+    if department_id:
+        documents = documents.filter(department_id=department_id)
+    
+    # Folder filter
+    folder_id = query_params.get('folder_id', '')
+    if folder_id:
+        documents = documents.filter(folder_id=folder_id)
+    
+    # Content-specific search
+    content_query = query_params.get('content_query', '')
+    if content_query:
+        documents = documents.filter(content_text__icontains=content_query)
+    
     # Document type filter
     doc_type = query_params.get('document_type', '')
     if doc_type:

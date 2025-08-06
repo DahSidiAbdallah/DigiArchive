@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Document, getDocument, deleteDocument, processDocumentOCR } from '@/services/document.service';
+import React, { useState, useEffect } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { Document, getDocument, deleteDocument, processDocumentOCR } from '@/services/document.service'
 import DocumentPreview from '@/components/DocumentPreview';
+import { useToast } from '@/contexts/ToastContext'
+import EditDocumentModal from '@/components/EditDocumentModal'
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();

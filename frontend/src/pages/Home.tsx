@@ -1,16 +1,28 @@
-import { useState, useEffect, useCallback, Fragment } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, Fragment, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
-import { Document, getDocuments } from '@/services/document.service'
+import { Document, getDocuments, deleteDocument } from '@/services/document.service'
 import { Department, Folder } from '@/types/department.types'
 import { getDepartments, getFolders, createDepartment, createFolder } from '@/services/department.service'
 import { Dialog, Transition } from '@headlessui/react'
+import { XMarkIcon } from '@heroicons/react/24/outline'
+import { advancedSearch, SearchParams } from '@/services/search.service'
+import { useToast } from '@/contexts/ToastContext'
+import DocumentListItem from '@/components/DocumentListItem'
+import EditDocumentModal from '@/components/EditDocumentModal'
+import TagManager from '@/components/TagManager'
 
 export default function Home() {
-  const { isAuthenticated, user } = useAuth()
-  const navigate = useNavigate()
+  const { isAuthenticated } = useAuth()
+  const { showSuccess, showError } = useToast()
   
-  // State for sidebar and filters
+  // State for dashboard navigation
+  const [currentView, setCurrentView] = useState<'departments' | 'department' | 'folder'>('departments')
+  const [breadcrumbs, setBreadcrumbs] = useState<{name: string, id?: number, type: 'departments' | 'department' | 'folder'}[]>([
+    { name: 'Départements', type: 'departments' }
+  ])
+  const [currentDepartment, setCurrentDepartment] = useState<Department | null>(null)
+  const [currentFolder, setCurrentFolder] = useState<Folder | null>(null)
   const [departments, setDepartments] = useState<Department[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null)
@@ -22,6 +34,15 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [documents, setDocuments] = useState<Document[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
+  const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([])
+  
+  // Advanced search states
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [contentSearch, setContentSearch] = useState('')
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false)
   
   // State for add department/folder modals
   const [departmentModalOpen, setDepartmentModalOpen] = useState(false)
@@ -35,6 +56,10 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [departmentError, setDepartmentError] = useState('')
   const [folderError, setFolderError] = useState('')
+  
+  // Edit modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [documentToEdit, setDocumentToEdit] = useState<Document | null>(null)
   
   // Fetch departments on component mount
   useEffect(() => {
@@ -81,7 +106,7 @@ export default function Home() {
     }
   }, [isAuthenticated, selectedDepartment, selectedFolder])
   
-  // Fetch documents based on filters
+  // Enhanced fetch documents function with advanced search
   const fetchDocuments = useCallback(async () => {
     if (!isAuthenticated) {
       return
@@ -90,31 +115,119 @@ export default function Home() {
     setDocumentsLoading(true)
     
     try {
-      const filters: Record<string, any> = {}
+      // Build search parameters
+      const searchParams: SearchParams = {
+        ordering: sortOrder === 'newest' ? '-created_at' : 
+                  sortOrder === 'oldest' ? 'created_at' :
+                  sortOrder === 'name' ? 'title' : '-title'
+      }
       
+      // Add filters based on current view
+      if (currentView === 'department' && currentDepartment) {
+        searchParams.department_id = currentDepartment.id
+      } else if (currentView === 'folder' && currentFolder) {
+        searchParams.folder_id = currentFolder.id
+      }
+      
+      // Legacy department/folder filters for compatibility
       if (selectedDepartment !== null) {
-        filters.department = selectedDepartment
+        searchParams.department_id = selectedDepartment
       }
       
       if (selectedFolder !== null) {
-        filters.folder = selectedFolder
+        searchParams.folder_id = selectedFolder
       }
       
+      // Add search query
+      if (searchQuery.trim()) {
+        searchParams.q = searchQuery.trim()
+      }
+      
+      // Add document type filter
       if (documentType) {
-        filters.document_type = documentType
+        searchParams.document_type = documentType
       }
       
-      const response = await getDocuments(1, searchQuery)
+      // Add date filters
+      if (dateFrom) {
+        searchParams.date_from = dateFrom
+      }
+      if (dateTo) {
+        searchParams.date_to = dateTo
+      }
+      
+      // Add content search
+      if (contentSearch.trim()) {
+        searchParams.content_query = contentSearch.trim()
+      }
+      
+      // Add tag filters
+      if (selectedTagIds.length > 0) {
+        searchParams.tags = selectedTagIds
+      }
+      
+      // Perform search
+      const response = await advancedSearch(searchParams)
       setDocuments(response.results)
+      setFilteredDocuments(response.results)
     } catch (err) {
       console.error('Error fetching documents:', err)
-      setDocuments([])
+      // Fallback to basic search
+      try {
+        const response = await getDocuments(1, searchQuery)
+        setDocuments(response.results)
+        setFilteredDocuments(response.results)
+      } catch (fallbackErr) {
+        console.error('Fallback search failed:', fallbackErr)
+        setDocuments([])
+        setFilteredDocuments([])
+      }
     } finally {
       setDocumentsLoading(false)
     }
-  }, [isAuthenticated, selectedDepartment, selectedFolder, documentType, searchQuery])
+  }, [isAuthenticated, currentView, currentDepartment, currentFolder, selectedDepartment, selectedFolder, searchQuery, documentType, sortOrder, dateFrom, dateTo, contentSearch, selectedTagIds])
   
-  // Fetch documents when filters change
+  // Real-time filtering for quick search
+  const performRealTimeFilter = useMemo(() => {
+    // Ensure documents is an array
+    if (!documents || !Array.isArray(documents)) {
+      return []
+    }
+    
+    if (!searchQuery && !documentType && !dateFrom && !dateTo && selectedTagIds.length === 0) {
+      return documents
+    }
+    
+    return documents.filter(doc => {
+      // Text search in multiple fields
+      const textMatch = !searchQuery || 
+        doc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.reference_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.content_text?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.tags?.some(tag => tag.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+      
+      // Document type filter
+      const typeMatch = !documentType || doc.document_type === documentType
+      
+      // Date filters
+      const dateFromMatch = !dateFrom || !doc.created_at || new Date(doc.created_at) >= new Date(dateFrom)
+      const dateToMatch = !dateTo || !doc.created_at || new Date(doc.created_at) <= new Date(dateTo)
+      
+      // Tag filters
+      const tagMatch = selectedTagIds.length === 0 || 
+        (doc.tags && doc.tags.some(tag => selectedTagIds.includes(tag.id!)))
+      
+      return textMatch && typeMatch && dateFromMatch && dateToMatch && tagMatch
+    })
+  }, [documents, searchQuery, documentType, dateFrom, dateTo, selectedTagIds])
+  
+  // Update filtered documents when filters change
+  useEffect(() => {
+    setFilteredDocuments(performRealTimeFilter)
+  }, [performRealTimeFilter])
+  
+  // Fetch documents when filters change with debouncing
   useEffect(() => {
     if (isAuthenticated) {
       const timer = setTimeout(() => {
@@ -125,26 +238,6 @@ export default function Home() {
     }
   }, [isAuthenticated, fetchDocuments])
   
-  // Format document type for display
-  const formatDocumentType = (type: string) => {
-    const typeMap: Record<string, string> = {
-      'invoice': 'Facture',
-      'bill_of_lading': 'Connaissement',
-      'transfer_request': 'Demande de transfert',
-      'contract': 'Contrat',
-      'report': 'Rapport',
-      'memo': 'Mémo',
-      'other': 'Autre'
-    }
-    return typeMap[type] || type
-  }
-  
-  // Get tag display for document
-  const getTagsDisplay = (document: Document) => {
-    if (!document.tags || document.tags.length === 0) return null
-    return document.tags.map(tag => tag.name).join(', ')
-  }
-
   // Handle click on a department
   const handleDepartmentClick = (deptId: number) => {
     setSelectedDepartment(prevDept => prevDept === deptId ? null : deptId)
@@ -154,13 +247,6 @@ export default function Home() {
   // Handle click on a folder
   const handleFolderClick = (folderId: number) => {
     setSelectedFolder(prevFolder => prevFolder === folderId ? null : folderId)
-  }
-  
-  // Handle document click to view details
-  const handleDocumentClick = (docId?: number) => {
-    if (docId) {
-      navigate(`/documents/${docId}`)
-    }
   }
   
   // Handle department creation
@@ -186,14 +272,57 @@ export default function Home() {
       setNewDepartmentDescription('')
       setIsCreateDepartmentModalOpen(false)
       
+      showSuccess('Succès', 'Département créé avec succès')
+      
     } catch (error) {
       console.error('Failed to create department:', error)
       setDepartmentError('Erreur lors de la création du département')
+      showError('Erreur', 'Impossible de créer le département')
     } finally {
       setIsSubmitting(false)
     }
   }
   
+  // Navigation functions
+  const navigateToDepartment = (department: Department) => {
+    setCurrentDepartment(department)
+    setCurrentFolder(null)
+    setSelectedDepartment(department.id)
+    setSelectedFolder(null)
+    setCurrentView('department')
+    setBreadcrumbs([
+      { name: 'Départements', type: 'departments' },
+      { name: department.name, id: department.id, type: 'department' }
+    ])
+  }
+
+  const navigateToFolder = (folder: Folder) => {
+    setCurrentFolder(folder)
+    setSelectedFolder(folder.id)
+    setCurrentView('folder')
+    setBreadcrumbs([
+      { name: 'Départements', type: 'departments' },
+      { name: currentDepartment?.name || '', id: currentDepartment?.id, type: 'department' },
+      { name: folder.name, id: folder.id, type: 'folder' }
+    ])
+  }
+
+  const navigateBack = (breadcrumb: typeof breadcrumbs[0]) => {
+    if (breadcrumb.type === 'departments') {
+      setCurrentView('departments')
+      setCurrentDepartment(null)
+      setCurrentFolder(null)
+      setSelectedDepartment(null)
+      setSelectedFolder(null)
+      setBreadcrumbs([{ name: 'Départements', type: 'departments' }])
+    } else if (breadcrumb.type === 'department' && breadcrumb.id) {
+      const dept = departments.find(d => d.id === breadcrumb.id)
+      if (dept) {
+        navigateToDepartment(dept)
+      }
+    }
+  }
+
   // Handle folder creation
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
@@ -212,7 +341,8 @@ export default function Home() {
       const newFolder = await createFolder({
         name: newFolderName.trim(),
         description: newFolderDescription.trim(),
-        department: selectedDepartment
+        department: selectedDepartment,
+        parent: null
       })
       
       // Update department folders
@@ -232,10 +362,56 @@ export default function Home() {
       setNewFolderDescription('')
       setIsCreateFolderModalOpen(false)
       
+      showSuccess('Succès', 'Dossier créé avec succès')
+      
     } catch (error) {
       console.error('Failed to create folder:', error)
+      showError('Erreur', 'Impossible de créer le dossier')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+  
+  // Handle document edit
+  const handleEditDocument = (document: Document) => {
+    setDocumentToEdit(document)
+    setIsEditModalOpen(true)
+  }
+  
+  // Handle document updated
+  const handleDocumentUpdated = (updatedDocument: Document) => {
+    // Update the document in the documents list
+    if (updatedDocument && updatedDocument.id) {
+      setDocuments(prev => prev.map(doc => 
+        doc.id === updatedDocument.id ? updatedDocument : doc
+      ))
+      setFilteredDocuments(prev => prev.map(doc => 
+        doc.id === updatedDocument.id ? updatedDocument : doc
+      ))
+    }
+    
+    // Note: We're not closing the modal here because it's already handled in the onClose function
+    // The EditDocumentModal component calls onClose() after successful update
+  }
+  
+  // Handle document delete
+  const handleDeleteDocument = async (documentId: number) => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce document ?')) {
+      return
+    }
+    
+    try {
+      await deleteDocument(documentId)
+      
+      // Remove the document from state
+      setDocuments(prev => prev.filter(doc => doc.id !== documentId))
+      setFilteredDocuments(prev => prev.filter(doc => doc.id !== documentId))
+      
+      showSuccess('Succès', 'Document supprimé avec succès')
+      
+    } catch (error) {
+      console.error('Erreur lors de la suppression du document:', error)
+      showError('Erreur', 'Impossible de supprimer le document')
     }
   }
   
@@ -667,22 +843,173 @@ export default function Home() {
                 </svg>
               </button>
               <h1 className="text-lg font-semibold text-primary-700">Tableau de bord</h1>
-              {/* Search */}
-              <div className="flex-1 max-w-lg mx-4">
+              {/* Enhanced Search */}
+              <div className="flex-1 max-w-2xl mx-4">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="Rechercher des documents..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   />
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </div>
+                  <button
+                    onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    title="Recherche avancée"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                    </svg>
+                  </button>
                 </div>
+                
+                {/* Advanced Search Panel */}
+                {showAdvancedSearch && (
+                  <div className="absolute z-30 mt-2 w-full bg-white border border-gray-200 rounded-md shadow-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Recherche dans le contenu
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Rechercher dans le texte..."
+                          value={contentSearch}
+                          onChange={(e) => setContentSearch(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Type de document
+                        </label>
+                        <select
+                          value={documentType}
+                          onChange={(e) => setDocumentType(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          <option value="">Tous les types</option>
+                          <option value="invoice">Facture</option>
+                          <option value="bill_of_lading">Connaissement</option>
+                          <option value="transfer_request">Demande de transfert</option>
+                          <option value="contract">Contrat</option>
+                          <option value="report">Rapport</option>
+                          <option value="memo">Mémo</option>
+                          <option value="other">Autre</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date de début
+                        </label>
+                        <input
+                          type="date"
+                          value={dateFrom}
+                          onChange={(e) => setDateFrom(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date de fin
+                        </label>
+                        <input
+                          type="date"
+                          value={dateTo}
+                          onChange={(e) => setDateTo(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                      </div>
+                      
+                      {/* Tag Filter */}
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Filtrer par étiquettes
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setIsTagManagerOpen(true)}
+                            className="flex-1 px-3 py-2 text-left border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
+                          >
+                            {selectedTagIds.length > 0 
+                              ? `${selectedTagIds.length} étiquette${selectedTagIds.length > 1 ? 's' : ''} sélectionnée${selectedTagIds.length > 1 ? 's' : ''}`
+                              : 'Sélectionner des étiquettes...'}
+                          </button>
+                          {selectedTagIds.length > 0 && (
+                            <button
+                              onClick={() => setSelectedTagIds([])}
+                              className="px-3 py-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                              title="Effacer les filtres d'étiquettes"
+                            >
+                              <XMarkIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* Selected tags display */}
+                        {selectedTagIds.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {selectedTagIds.map(tagId => {
+                              const tag = (documents || [])
+                                .flatMap(doc => (doc.tags || []))
+                                .find(t => t.id === tagId)
+                              return tag ? (
+                                <span
+                                  key={tagId}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800"
+                                >
+                                  {tag.name}
+                                  <button
+                                    onClick={() => setSelectedTagIds(prev => prev.filter(id => id !== tagId))}
+                                    className="ml-1 hover:text-primary-600"
+                                  >
+                                    <XMarkIcon className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              ) : null
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-200">
+                      <div className="text-sm text-gray-500">
+                        {(filteredDocuments || []).length} résultat{(filteredDocuments || []).length !== 1 ? 's' : ''} trouvé{(filteredDocuments || []).length !== 1 ? 's' : ''}
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            setSearchQuery('')
+                            setContentSearch('')
+                            setDocumentType('')
+                            setDateFrom('')
+                            setDateTo('')
+                            setSelectedTagIds([])
+                          }}
+                          className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                        >
+                          Réinitialiser
+                        </button>
+                        <Link
+                          to="/search"
+                          className="px-3 py-1 text-sm text-white bg-primary-600 rounded hover:bg-primary-700"
+                        >
+                          Recherche avancée
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               {/* Notification bell (placeholder) */}
               <div>
@@ -697,20 +1024,6 @@ export default function Home() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-wrap">
                 <select
-                  value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
-                  className="border border-gray-300 rounded-md py-1 pl-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="">Tous les types</option>
-                  <option value="invoice">Facture</option>
-                  <option value="bill_of_lading">Connaissement</option>
-                  <option value="transfer_request">Demande de transfert</option>
-                  <option value="contract">Contrat</option>
-                  <option value="report">Rapport</option>
-                  <option value="memo">Mémo</option>
-                  <option value="other">Autre</option>
-                </select>
-                <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value)}
                   className="border border-gray-300 rounded-md py-1 pl-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -720,120 +1033,385 @@ export default function Home() {
                   <option value="name">Nom (A-Z)</option>
                   <option value="name_desc">Nom (Z-A)</option>
                 </select>
+                
+                {/* Quick filter buttons */}
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setDocumentType('')}
+                    className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                      !documentType 
+                        ? 'bg-primary-100 text-primary-700 border-primary-300' 
+                        : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                    }`}
+                  >
+                    Tous
+                  </button>
+                  <button
+                    onClick={() => setDocumentType('invoice')}
+                    className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                      documentType === 'invoice' 
+                        ? 'bg-primary-100 text-primary-700 border-primary-300' 
+                        : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                    }`}
+                  >
+                    Factures
+                  </button>
+                  <button
+                    onClick={() => setDocumentType('bill_of_lading')}
+                    className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                      documentType === 'bill_of_lading' 
+                        ? 'bg-primary-100 text-primary-700 border-primary-300' 
+                        : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                    }`}
+                  >
+                    Connaissements
+                  </button>
+                  <button
+                    onClick={() => setDocumentType('contract')}
+                    className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                      documentType === 'contract' 
+                        ? 'bg-primary-100 text-primary-700 border-primary-300' 
+                        : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                    }`}
+                  >
+                    Contrats
+                  </button>
+                </div>
               </div>
               <div className="text-sm text-gray-500">
-                {documents.length} document{documents.length !== 1 ? 's' : ''}
+                {(filteredDocuments || []).length} document{(filteredDocuments || []).length !== 1 ? 's' : ''}
+                {searchQuery && ` • "${searchQuery}"`}
               </div>
             </div>
           </div>
         </header>
-        {/* Document list */}
-        <main className="flex-1 overflow-y-auto p-4 bg-gray-50">
-          {documentsLoading ? (
-            <div className="bg-white shadow rounded-lg divide-y divide-gray-200">
-              {[...Array(3)].map((_, index) => (
-                <div key={index} className="p-4">
-                  <div className="animate-pulse flex space-x-4">
-                    <div className="rounded-md bg-gray-200 h-12 w-12"></div>
-                    <div className="flex-1 space-y-2 py-1">
-                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                      <div className="space-y-2">
-                        <div className="h-4 bg-gray-200 rounded"></div>
-                        <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+        {/* Main Dashboard Content */}
+        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
+          {/* Breadcrumb Navigation */}
+          <nav className="flex mb-6" aria-label="Breadcrumb">
+            <ol className="inline-flex items-center space-x-1 md:space-x-3">
+              {breadcrumbs.map((breadcrumb, index) => (
+                <li key={index} className="inline-flex items-center">
+                  {index > 0 && (
+                    <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd"/>
+                    </svg>
+                  )}
+                  <button
+                    onClick={() => navigateBack(breadcrumb)}
+                    className={`text-sm font-medium ${
+                      index === breadcrumbs.length - 1
+                        ? 'text-gray-500 cursor-default'
+                        : 'text-primary-600 hover:text-primary-800'
+                    }`}
+                    disabled={index === breadcrumbs.length - 1}
+                  >
+                    {breadcrumb.name}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          {/* Dashboard Content Based on Current View */}
+          {currentView === 'departments' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">Départements</h2>
+                <button
+                  onClick={() => setIsCreateDepartmentModalOpen(true)}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                >
+                  <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Nouveau Département
+                </button>
+              </div>
+              
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[...Array(6)].map((_, index) => (
+                    <div key={index} className="bg-white shadow rounded-lg p-6">
+                      <div className="animate-pulse">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
+                        <div className="h-3 bg-gray-200 rounded mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-5/6"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {departments.map((department) => (
+                    <div
+                      key={department.id}
+                      onClick={() => navigateToDepartment(department)}
+                      className="bg-white shadow rounded-lg p-6 hover:shadow-lg transition-shadow cursor-pointer border hover:border-primary-300"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center">
+                          <div className="bg-primary-100 rounded-full p-3">
+                            <svg className="h-6 w-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                          </div>
+                        </div>
+                        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                          {department.code}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">{department.name}</h3>
+                      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                        {department.description || 'Aucune description disponible'}
+                      </p>
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <span>{department.folders?.length || 0} dossier{(department.folders?.length || 0) !== 1 ? 's' : ''}</span>
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Department View */}
+          {currentView === 'department' && currentDepartment && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{currentDepartment.name}</h2>
+                  <p className="text-gray-600 mt-1">{currentDepartment.description}</p>
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setIsCreateFolderModalOpen(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  >
+                    <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Nouveau Dossier
+                  </button>
+                </div>
+              </div>
+
+              {/* Folders Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {folders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    onClick={() => navigateToFolder(folder)}
+                    className="bg-white shadow rounded-lg p-4 hover:shadow-lg transition-shadow cursor-pointer border hover:border-primary-300"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-yellow-100 rounded-lg p-2">
+                        <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-medium text-gray-900 truncate">{folder.name}</h3>
+                        <p className="text-xs text-gray-500 truncate">{folder.description}</p>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : documents.length === 0 ? (
-            <div className="bg-white shadow rounded-lg p-6 text-center">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun document</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Commencez par télécharger un document ou sélectionner un autre département.
-              </p>
-              <div className="mt-6">
-                <Link
-                  to="/documents/upload"
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                >
-                  <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Ajouter un document
-                </Link>
+                ))}
               </div>
-            </div>
-          ) : (
-            <div className="bg-white shadow rounded-lg overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Département</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tags</th>
-                    <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {documents.map((doc) => (
-                    <tr key={doc.id} className="hover:bg-primary-50 cursor-pointer transition-colors" onClick={() => handleDocumentClick(doc.id)}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10 bg-primary-100 rounded-md flex items-center justify-center">
-                            <svg className="h-6 w-6 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+
+              {/* Recent Documents in Department */}
+              <div className="bg-white shadow rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-medium text-gray-900">Documents récents</h3>
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {documentsLoading ? (
+                    <div className="p-6">
+                      <div className="animate-pulse space-y-4">
+                        {[...Array(3)].map((_, index) => (
+                          <div key={index} className="flex items-center space-x-4">
+                            <div className="rounded-md bg-gray-200 h-10 w-10"></div>
+                            <div className="flex-1 space-y-2">
+                              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                              <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (filteredDocuments || []).length === 0 ? (
+                    <div className="p-6 text-center">
+                      <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                      </svg>
+                      <h3 className="mt-4 text-sm font-medium text-gray-900">Aucun document</h3>
+                      <p className="mt-2 text-sm text-gray-500">
+                        {searchQuery || documentType || dateFrom || dateTo 
+                          ? 'Aucun document ne correspond aux critères de recherche.' 
+                          : 'Aucun document trouvé dans ce département.'}
+                      </p>
+                      <div className="mt-6">
+                        <Link
+                          to="/documents/upload"
+                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
+                        >
+                          <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                          Télécharger un document
+                        </Link>
+                      </div>
+                    </div>
+                  ) : (
+                    (filteredDocuments || []).slice(0, 5).map((document) => (
+                      <Link
+                        key={document.id}
+                        to={`/documents/${document.id}`}
+                        className="block p-4 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div className="flex-shrink-0">
+                            <div className="bg-blue-100 rounded-lg p-2">
+                              <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{document.title}</p>
+                            <p className="text-sm text-gray-500">
+                              {document.created_at ? new Date(document.created_at).toLocaleDateString('fr-FR') : 'Date inconnue'}
+                              {document.folder && ` • ${document.folder.name}`}
+                            </p>
+                          </div>
+                          <div className="text-sm text-gray-400">
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900 truncate max-w-xs">{doc.title}</div>
-                            <div className="text-xs text-gray-500 truncate max-w-xs">{doc.file_name}</div>
+                        </div>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Folder View */}
+          {currentView === 'folder' && currentFolder && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{currentFolder.name}</h2>
+                  <p className="text-gray-600 mt-1">{currentFolder.description}</p>
+                </div>
+                <div className="flex space-x-3">
+                  <Link
+                    to="/documents/upload"
+                    state={{ department: currentDepartment?.id, folder: currentFolder.id }}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  >
+                    <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Ajouter Document
+                  </Link>
+                </div>
+              </div>
+
+              {/* Documents in Folder */}
+              <div className="bg-white shadow rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium text-gray-900">Documents</h3>
+                    <div className="flex items-center space-x-4">
+                      {/* Search */}
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Rechercher..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="pl-8 pr-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                        <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                          <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                      </div>
+                      {/* Sort */}
+                      <select
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value)}
+                        className="border border-gray-300 rounded-md py-1 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      >
+                        <option value="newest">Plus récent</option>
+                        <option value="oldest">Plus ancien</option>
+                        <option value="name">Nom (A-Z)</option>
+                        <option value="name_desc">Nom (Z-A)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {documentsLoading ? (
+                    <div className="p-6">
+                      <div className="animate-pulse space-y-4">
+                        {[...Array(5)].map((_, index) => (
+                          <div key={index} className="flex items-center space-x-4">
+                            <div className="rounded-md bg-gray-200 h-12 w-12"></div>
+                            <div className="flex-1 space-y-2">
+                              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                              <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                          {formatDocumentType(doc.document_type)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc.department?.name || 'Non assigné'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {doc.upload_date ? new Date(doc.upload_date).toLocaleDateString('fr-FR') : doc.created_at ? new Date(doc.created_at).toLocaleDateString('fr-FR') : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div className="flex flex-wrap gap-1 max-w-xs">
-                          {doc.tags && doc.tags.length > 0 ? (
-                            doc.tags.slice(0, 3).map((tag, idx) => (
-                              <span key={idx} className="px-2 py-0.5 rounded text-xs bg-gray-100">{tag.name}</span>
-                            ))
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                          {doc.tags && doc.tags.length > 3 && (
-                            <span className="px-2 py-0.5 rounded text-xs bg-gray-100">+{doc.tags.length - 3}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDocumentClick(doc.id);
-                          }}
-                          className="text-primary-600 hover:text-primary-900"
+                        ))}
+                      </div>
+                    </div>
+                  ) : (filteredDocuments || []).length === 0 ? (
+                    <div className="p-8 text-center">
+                      <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                      </svg>
+                      <h3 className="mt-4 text-sm font-medium text-gray-900">Aucun document</h3>
+                      <p className="mt-2 text-sm text-gray-500">
+                        {searchQuery || documentType || dateFrom || dateTo
+                          ? 'Aucun document ne correspond aux critères de recherche.'
+                          : 'Ce dossier ne contient aucun document.'}
+                      </p>
+                      <div className="mt-6">
+                        <Link
+                          to="/documents/upload"
+                          state={{ department: currentDepartment?.id, folder: currentFolder.id }}
+                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
                         >
-                          Voir
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          <svg className="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                          Télécharger le premier document
+                        </Link>
+                      </div>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-200">
+                      {(filteredDocuments || []).map((document) => (
+                        <DocumentListItem
+                          key={document.id}
+                          document={document}
+                          searchQuery={searchQuery}
+                          onEdit={handleEditDocument}
+                          onDelete={handleDeleteDocument}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -982,6 +1560,27 @@ export default function Home() {
           </div>
         </Dialog>
       </Transition>
+      
+      {/* Edit Document Modal */}
+      {documentToEdit && (
+        <EditDocumentModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false)
+            setDocumentToEdit(null)
+          }}
+          document={documentToEdit}
+          onDocumentUpdated={handleDocumentUpdated}
+        />
+      )}
+      
+      {/* Tag Manager Modal */}
+      <TagManager
+        isOpen={isTagManagerOpen}
+        onClose={() => setIsTagManagerOpen(false)}
+        selectedTags={selectedTagIds}
+        onTagsSelected={setSelectedTagIds}
+      />
     </div>
   );
 }

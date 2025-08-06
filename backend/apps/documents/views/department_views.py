@@ -58,16 +58,11 @@ class FolderViewSet(viewsets.ModelViewSet):
         if search:
             queryset = queryset.filter(name__icontains=search)
         
-        # If not admin, filter by user's department
-        if not self.request.user.is_staff:
-            user_dept = getattr(self.request.user, 'department', '')
-            if user_dept:
-                dept_qs = Department.objects.filter(name=user_dept)
-                if dept_qs.exists():
-                    queryset = queryset.filter(department__in=dept_qs)
-                else:
-                    return Folder.objects.none()
-            else:
-                return Folder.objects.none()
+        # Allow all authenticated users to see and create folders
+        # Staff users can see all folders
+        if self.request.user.is_staff:
+            return queryset
         
+        # Regular authenticated users can also see all folders
+        # This allows them to organize documents in any department
         return queryset

@@ -5,7 +5,7 @@ import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 import Dashboard from '@/pages/Dashboard'
 import Documents from '@/pages/Documents'
-import DocumentDetail from '@/pages/DocumentDetail'
+import EnhancedDocumentDetail from '@/pages/EnhancedDocumentDetail'
 import AdvancedSearch from '@/pages/AdvancedSearch'
 import Notifications from '@/pages/Notifications'
 import NotFound from '@/pages/NotFound'
@@ -28,7 +28,7 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="documents">
               <Route index element={<Documents />} />
-              <Route path=":id" element={<DocumentDetail />} />
+              <Route path=":id" element={<EnhancedDocumentDetail />} />
             </Route>
             <Route path="search" element={<AdvancedSearch />} />
             <Route path="notifications" element={<Notifications />} />

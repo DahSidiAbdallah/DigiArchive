@@ -54,7 +54,7 @@ export interface DocumentListResponse {
 export const getDocuments = async (
   page = 1,
   search?: string,
-  filters?: Record<string, string | number | null>
+  filters?: Record<string, string | number | null | undefined>
 ): Promise<DocumentListResponse> => {
   // Validate page number
   const validPage = isNaN(Number(page)) ? 1 : Math.max(1, Number(page));
@@ -130,7 +130,9 @@ export const getDocuments = async (
     }
     
     // For development debugging, still throw error
-    if (process.env.NODE_ENV === 'development') {
+    // Use typeof window to check if we're in a browser environment instead of process.env
+    const isDevelopment = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+    if (isDevelopment) {
       throw error;
     }
     
@@ -363,33 +365,119 @@ export const createDocument = async (document: Document): Promise<Document> => {
  * Update an existing document
  */
 export const updateDocument = async (id: number, document: Partial<Document>): Promise<Document> => {
-  // Handle file upload with FormData
-  if (document.file instanceof File) {
-    const formData = new FormData();
+  // Always use FormData for consistent handling on the server side
+  const formData = new FormData();
+  
+  // Log the document object being sent
+  console.log('Updating document with data:', document);
+  
+  // Process all fields properly
+  Object.entries(document).forEach(([key, value]) => {
+    // Skip undefined or null values
+    if (value === undefined || value === null) {
+      return;
+    }
     
-    Object.entries(document).forEach(([key, value]) => {
-      if (key === 'file') {
-        formData.append(key, value as File);
-      } else if (key === 'tag_ids' && Array.isArray(value)) {
-        value.forEach(tagId => {
+    // Handle file uploads
+    if (key === 'file' && value instanceof File) {
+      formData.append(key, value);
+    } 
+    // Handle tag_ids specially - ensure they are always sent as numbers
+    else if (key === 'tag_ids' && Array.isArray(value)) {
+      // Clear existing tags if empty array
+      if (value.length === 0) {
+        // For Django REST Framework, sending an empty list requires this format
+        formData.append('tag_ids', ''); 
+        console.log('Sending empty tag_ids array');
+      } else {
+        // Convert and validate all tag IDs before appending
+        const numericTagIds = value
+          .map(tagId => {
+            // Convert to number if it's a string
+            if (typeof tagId === 'string') {
+              return parseInt(tagId, 10);
+            }
+            return tagId;
+          })
+          // Filter out any NaN values or non-numbers
+          .filter(tagId => typeof tagId === 'number' && !isNaN(tagId));
+        
+        console.log('Numeric tag IDs after conversion:', numericTagIds);
+          
+        // Add each numeric tag ID to the form data
+        numericTagIds.forEach(tagId => {
           formData.append('tag_ids', tagId.toString());
+          console.log(`Adding tag_id: ${tagId} (${typeof tagId})`);
         });
-      } else if (value !== undefined && value !== null) {
+      }
+    } 
+    // Handle date fields properly
+    else if (key === 'date' && value) {
+      formData.append(key, value.toString());
+    }
+    // Handle department_id and folder_id - allow null values
+    else if ((key === 'department_id' || key === 'folder_id')) {
+      if (value === null) {
+        formData.append(key, '');
+      } else {
         formData.append(key, value.toString());
       }
-    });
-    
+    }
+    // Handle document_type - ensure it's sent as a clean value that matches exactly what backend expects
+    else if (key === 'document_type') {
+      // Map frontend values to backend expected values if needed
+      // This mapping ensures we send exactly what the backend expects
+      const documentTypeMap: Record<string, string> = {
+        'PDF': 'pdf',
+        'Word': 'docx',
+        'Excel': 'xlsx',
+        'Image': 'image',
+        'Other': 'other'
+      };
+      
+      // Clean up the document type and convert to lowercase for consistent comparison
+      const cleanDocumentType = value.toString().replace(/[\\'"]/g, '').trim();
+      
+      // Use the mapped value if it exists, otherwise use lowercase version of the clean value
+      const finalDocumentType = documentTypeMap[cleanDocumentType] || cleanDocumentType.toLowerCase();
+      
+      formData.append(key, finalDocumentType);
+      console.log(`Adding document_type: "${finalDocumentType}" (original: "${value}")`);
+    }
+    // Handle all other fields
+    else {
+      formData.append(key, value.toString());
+    }
+  });
+
+  // Log the FormData for debugging (FormData can't be directly logged)
+  console.log('FormData entries:');
+  for (const pair of formData.entries()) {
+    console.log(pair[0], pair[1]);
+  }
+  
+  try {
+    // Send the request with proper headers
     const response = await api.patch<Document>(`/documents/${id}/`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
+    
+    console.log('Document update successful:', response.data);
     return response.data;
+  } catch (error: any) {
+    console.error('Error updating document:', error);
+    
+    // Log detailed error information if available
+    if (error.response) {
+      console.error('Error response status:', error.response.status);
+      console.error('Error response data:', error.response.data);
+      console.error('Error response headers:', error.response.headers);
+    }
+    
+    throw error; // Re-throw for component handling
   }
-  
-  // Regular JSON request if no file is present
-  const response = await api.patch<Document>(`/documents/${id}/`, document);
-  return response.data;
 };
 
 /**

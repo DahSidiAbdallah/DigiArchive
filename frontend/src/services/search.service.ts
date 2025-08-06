@@ -14,6 +14,9 @@ export interface SearchParams {
   uploaded_by?: number;
   ordering?: string;
   page?: number;
+  department_id?: number;
+  folder_id?: number;
+  content_query?: string;
 }
 
 export interface SearchSuggestion {
@@ -60,6 +63,18 @@ export const advancedSearch = async (params: SearchParams): Promise<DocumentList
   
   if (params.ordering) {
     queryParams.append('ordering', params.ordering);
+  }
+  
+  if (params.department_id) {
+    queryParams.append('department_id', params.department_id.toString());
+  }
+  
+  if (params.folder_id) {
+    queryParams.append('folder_id', params.folder_id.toString());
+  }
+  
+  if (params.content_query) {
+    queryParams.append('content_query', params.content_query);
   }
   
   if (params.page) {
