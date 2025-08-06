@@ -13,10 +13,8 @@ export interface Document {
   id?: number;
   title: string;
   document_type: string;
-  department_id?: number | null;
-  department?: Department;
-  folder_id?: number | null;
-  folder?: Folder;
+  department?: number | Department | null;
+  folder?: number | Folder | null;
   file?: File | string;
   file_name?: string;
   file_size?: number;
@@ -415,34 +413,18 @@ export const updateDocument = async (id: number, document: Partial<Document>): P
     else if (key === 'date' && value) {
       formData.append(key, value.toString());
     }
-    // Handle department_id and folder_id - allow null values
-    else if ((key === 'department_id' || key === 'folder_id')) {
+    // Handle department and folder - allow null values
+    else if (key === 'department' || key === 'folder') {
       if (value === null) {
         formData.append(key, '');
       } else {
         formData.append(key, value.toString());
       }
     }
-    // Handle document_type - ensure it's sent as a clean value that matches exactly what backend expects
+    // Handle document_type - send value directly
     else if (key === 'document_type') {
-      // Map frontend values to backend expected values if needed
-      // This mapping ensures we send exactly what the backend expects
-      const documentTypeMap: Record<string, string> = {
-        'PDF': 'pdf',
-        'Word': 'docx',
-        'Excel': 'xlsx',
-        'Image': 'image',
-        'Other': 'other'
-      };
-      
-      // Clean up the document type and convert to lowercase for consistent comparison
-      const cleanDocumentType = value.toString().replace(/[\\'"]/g, '').trim();
-      
-      // Use the mapped value if it exists, otherwise use lowercase version of the clean value
-      const finalDocumentType = documentTypeMap[cleanDocumentType] || cleanDocumentType.toLowerCase();
-      
-      formData.append(key, finalDocumentType);
-      console.log(`Adding document_type: "${finalDocumentType}" (original: "${value}")`);
+      formData.append(key, value.toString());
+      console.log(`Adding document_type: "${value}"`);
     }
     // Handle all other fields
     else {

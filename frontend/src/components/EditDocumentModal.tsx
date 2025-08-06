@@ -3,6 +3,7 @@ import { Dialog, Transition } from '@headlessui/react'
 import { Document, updateDocument, getTags } from '@/services/document.service'
 import { Department, Folder } from '@/types/department.types'
 import { getDepartments, getFolders } from '@/services/department.service'
+import { DocumentType, documentTypeLabels } from '@/types/document.types'
 import { useToast } from '@/contexts/ToastContext'
 
 interface EditDocumentModalProps {
@@ -25,8 +26,8 @@ export default function EditDocumentModal({
     document_type: '',
     reference_number: '',
     date: '',
-    department_id: '',
-    folder_id: '',
+    department: '',
+    folder: '',
     tag_ids: [] as number[]
   })
   const [departments, setDepartments] = useState<Department[]>([])
@@ -67,8 +68,8 @@ export default function EditDocumentModal({
         document_type: cleanDocType,
         reference_number: document.reference_number || '',
         date: document.date || '',
-        department_id: document.department_id?.toString() || '',
-        folder_id: document.folder_id?.toString() || '',
+        department: (document.department as any)?.toString() || '',
+        folder: (document.folder as any)?.toString() || '',
         tag_ids: tagIds
       })
     }
@@ -98,9 +99,9 @@ export default function EditDocumentModal({
   // Load folders when department changes
   useEffect(() => {
     const loadFolders = async () => {
-      if (formData.department_id) {
+      if (formData.department) {
         try {
-          const foldersResponse = await getFolders(parseInt(formData.department_id))
+          const foldersResponse = await getFolders(parseInt(formData.department))
           setFolders(foldersResponse)
         } catch (error) {
           console.error('Error loading folders:', error)
@@ -112,7 +113,7 @@ export default function EditDocumentModal({
     }
 
     loadFolders()
-  }, [formData.department_id])
+  }, [formData.department])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -203,11 +204,11 @@ export default function EditDocumentModal({
       if (formData.reference_number.trim()) updateData.reference_number = formData.reference_number.trim();
       if (formData.date) updateData.date = formData.date;
       
-      // Handle department_id - convert to number or null
-      updateData.department_id = formData.department_id ? parseInt(formData.department_id) : null;
-      
-      // Handle folder_id - convert to number or null
-      updateData.folder_id = formData.folder_id ? parseInt(formData.folder_id) : null;
+      // Handle department - convert to number or null
+      updateData.department = formData.department ? parseInt(formData.department) : null;
+
+      // Handle folder - convert to number or null
+      updateData.folder = formData.folder ? parseInt(formData.folder) : null;
       
       // Always include tag_ids as a clean array of numbers
       updateData.tag_ids = [];
@@ -364,28 +365,26 @@ export default function EditDocumentModal({
                       id="document_type"
                       value={formData.document_type}
                       onChange={(e) => {
-                        // Special handler for document_type to ensure clean values
-                        const value = e.target.value;
+                        const value = e.target.value
                         setFormData(prev => ({
                           ...prev,
                           document_type: value
-                        }));
-                        // Clear error when user selects a value
+                        }))
                         if (errors.document_type) {
-                          setErrors(prev => ({ ...prev, document_type: '' }));
+                          setErrors(prev => ({ ...prev, document_type: '' }))
                         }
-                        console.log('Selected document_type:', value);
+                        console.log('Selected document_type:', value)
                       }}
                       className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 ${
                         errors.document_type ? 'border-red-300' : ''
                       }`}
                     >
                       <option value="">Sélectionner un type</option>
-                      <option value="pdf">PDF</option>
-                      <option value="docx">Word</option>
-                      <option value="xlsx">Excel</option>
-                      <option value="image">Image</option>
-                      <option value="other">Autre</option>
+                      {Object.values(DocumentType).map((type) => (
+                        <option key={type} value={type}>
+                          {documentTypeLabels[type]}
+                        </option>
+                      ))}
                     </select>
                     {errors.document_type && (
                       <p className="mt-1 text-sm text-red-600">{errors.document_type}</p>
@@ -424,13 +423,13 @@ export default function EditDocumentModal({
 
                   {/* Department */}
                   <div>
-                    <label htmlFor="department_id" className="block text-sm font-medium text-gray-700">
+                    <label htmlFor="department" className="block text-sm font-medium text-gray-700">
                       Département
                     </label>
                     <select
-                      name="department_id"
-                      id="department_id"
-                      value={formData.department_id}
+                      name="department"
+                      id="department"
+                      value={formData.department}
                       onChange={handleInputChange}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                     >
@@ -444,15 +443,15 @@ export default function EditDocumentModal({
                   </div>
 
                   {/* Folder */}
-                  {formData.department_id && (
+                  {formData.department && (
                     <div>
-                      <label htmlFor="folder_id" className="block text-sm font-medium text-gray-700">
+                      <label htmlFor="folder" className="block text-sm font-medium text-gray-700">
                         Dossier
                       </label>
                       <select
-                        name="folder_id"
-                        id="folder_id"
-                        value={formData.folder_id}
+                        name="folder"
+                        id="folder"
+                        value={formData.folder}
                         onChange={handleInputChange}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                       >
