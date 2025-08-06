@@ -4,6 +4,7 @@ import { Tag, getTags } from '@/services/document.service'
 import DepartmentSelector from './DepartmentSelector'
 import { useLocation } from 'react-router-dom'
 import FolderManager from '@/components/FolderManager'
+import { DocumentType, documentTypeLabels } from '@/types/document.types'
 
 interface DocumentUploadProps {
   onSuccess?: () => void
@@ -325,13 +326,11 @@ export default function DocumentUpload({ onSuccess, onCancel, isOpen }: Document
                         className="block w-full rounded-md border-0 py-2 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 transition-colors"
                       >
                         <option value="">Sélectionner le type de document</option>
-                        <option value="invoice">Facture</option>
-                        <option value="bill_of_lading">Connaissement</option>
-                        <option value="transfer_request">Demande de transfert</option>
-                        <option value="contract">Contrat</option>
-                        <option value="report">Rapport</option>
-                        <option value="memo">Mémo</option>
-                        <option value="other">Autre</option>
+                        {Object.values(DocumentType).map(type => (
+                          <option key={type} value={type}>
+                            {documentTypeLabels[type]}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>

@@ -35,7 +35,8 @@ def create_document_notifications(sender, instance, created, **kwargs):
     
     else:
         # Document was updated
-        if instance.ocr_processed and instance.tracker.has_changed('ocr_processed'):
+        # Notify when OCR processing completes
+        if instance.is_ocr_processed:
             # OCR processing completed
             Notification.objects.create(
                 user=instance.uploaded_by,

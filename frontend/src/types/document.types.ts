@@ -18,10 +18,8 @@ export interface Document {
   id: number;
   title: string;
   document_type: string;
-  department_id?: number | null;
-  department?: Department;
-  folder_id?: number | null;
-  folder?: Folder;
+  department?: number | Department | null;
+  folder?: number | Folder | null;
   file: string | File;
   file_name?: string;
   file_size?: number;

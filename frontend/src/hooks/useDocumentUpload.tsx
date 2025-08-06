@@ -73,6 +73,8 @@ export const useDocumentUpload = () => {
         reference_number: documentData.reference_number?.trim() || '',
         date: documentData.date,
         tag_ids: documentData.tag_ids || [],
+        department: documentData.department ?? null,
+        folder: documentData.folder ?? null,
       };
 
       console.log('Preparing document upload with data:', {
