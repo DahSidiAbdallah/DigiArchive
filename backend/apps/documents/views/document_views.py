@@ -10,6 +10,7 @@ from apps.documents.serializers.document_serializers import (
 )
 from apps.documents.serializers.ocr_serializers import DocumentOCRSerializer
 from apps.documents.permissions import IsOwnerOrAdmin, EnsureCorrectFolderDepartment
+from apps.documents.utils.audit_utils import log_user_activity, get_model_changes
 
 
 class TagViewSet(viewsets.ModelViewSet):
@@ -198,12 +199,67 @@ class DocumentViewSet(viewsets.ModelViewSet):
         try:
             # Safely save the document with the current user
             document = serializer.save(uploaded_by=self.request.user)
+            
+            # Log the document creation in audit trail
+            log_user_activity(
+                user=self.request.user,
+                action_type='create',
+                content_object=document,
+                description=f"Created document: {document.title}",
+                request=self.request
+            )
+            
             print(f"Document created successfully: {document.title}")
             # OCR processing is handled by the post_save signal automatically
         except Exception as e:
             # Log the error for debugging
             print(f"Error in document creation: {str(e)}")
             raise
+            
+    def perform_update(self, serializer):
+        """Log updates to documents in the audit trail."""
+        # Get the document before changes
+        old_instance = self.get_object()
+        
+        # Save the document with changes
+        document = serializer.save()
+        
+        # Track changes
+        changes = get_model_changes(
+            old_instance, 
+            document,
+            tracked_fields=[
+                'title', 'document_type', 'department', 'folder',
+                'description', 'reference_number', 'date'
+            ]
+        )
+        
+        # Log the update
+        if changes:
+            log_user_activity(
+                user=self.request.user,
+                action_type='update',
+                content_object=document,
+                description=f"Updated document: {document.title}",
+                changes=changes,
+                request=self.request
+            )
+            
+    def perform_destroy(self, instance):
+        """Log document deletion in the audit trail."""
+        document_title = instance.title
+        
+        # Log the deletion
+        log_user_activity(
+            user=self.request.user,
+            action_type='delete',
+            content_object=instance,
+            description=f"Deleted document: {document_title}",
+            request=self.request
+        )
+        
+        # Delete the document
+        instance.delete()
     
     @action(detail=False, methods=['post'])
     def simple_upload(self, request):
@@ -318,3 +374,39 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 {"message": "No OCR data available for this document."},
                 status=status.HTTP_404_NOT_FOUND
             )
+    
+    @action(detail=False, methods=['get'])
+    def export_csv(self, request):
+        """
+        Export documents as CSV file.
+        """
+        from apps.documents.utils.export_utils import export_documents_csv
+        
+        # Apply filters from request
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        return export_documents_csv(request, queryset)
+    
+    @action(detail=False, methods=['get'])
+    def export_excel(self, request):
+        """
+        Export documents as Excel file.
+        """
+        from apps.documents.utils.export_utils import export_documents_excel
+        
+        # Apply filters from request
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        return export_documents_excel(request, queryset)
+    
+    @action(detail=False, methods=['get'])
+    def export_pdf(self, request):
+        """
+        Export documents as PDF file.
+        """
+        from apps.documents.utils.export_utils import export_documents_pdf
+        
+        # Apply filters from request
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        return export_documents_pdf(request, queryset)

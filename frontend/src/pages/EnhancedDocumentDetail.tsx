@@ -4,6 +4,7 @@ import { Document, getDocument, deleteDocument, processDocumentOCR } from '@/ser
 import DocumentOCRView from '@/components/DocumentOCRView'
 import { useToast } from '@/contexts/ToastContext'
 import EditDocumentModal from '@/components/EditDocumentModal'
+import AuditLogViewer from '@/components/AuditLogViewer'
 
 export default function EnhancedDocumentDetail() {
   const { id } = useParams<{ id: string }>()
@@ -330,6 +331,17 @@ export default function EnhancedDocumentDetail() {
                         </span>
                       ))}
                     </div>
+                  </div>
+                )}
+                
+                {/* Audit Log Section */}
+                {document.id && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Historique d'activité</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Consultez l'historique des actions effectuées sur ce document.
+                    </p>
+                    <AuditLogViewer documentId={document.id} />
                   </div>
                 )}
               </div>

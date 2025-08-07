@@ -2,8 +2,18 @@
 
 from rest_framework import views, status, permissions
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from django.conf import settings
 from apps.documents.serializers.document_serializers import DocumentListSerializer, DocumentSerializer
 from apps.search.utils import advanced_search, search_suggestions
+from apps.search.elasticsearch_utils import elasticsearch_search
+
+
+class DocumentSearchPagination(PageNumberPagination):
+    """Custom pagination for document search results."""
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class AdvancedSearchView(views.APIView):
@@ -11,41 +21,41 @@ class AdvancedSearchView(views.APIView):
     API endpoint for advanced document search.
     """
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = DocumentSearchPagination
     
     def get(self, request):
         """Perform advanced search on documents."""
-        # Get documents matching search criteria
-        documents = advanced_search(request.query_params, request.user)
+        # Check if we should use Elasticsearch
+        use_elasticsearch = request.query_params.get('use_elasticsearch', '').lower() == 'true'
+        use_es = hasattr(settings, 'ELASTICSEARCH_DSL') and use_elasticsearch
+        
+        # Try Elasticsearch first if requested
+        if use_es:
+            try:
+                documents = elasticsearch_search(request.query_params, request.user)
+            except Exception as e:
+                # If Elasticsearch fails, fall back to regular search
+                print(f"Elasticsearch error: {str(e)}")
+                documents = advanced_search(request.query_params, request.user)
+        else:
+            # Use regular search
+            documents = advanced_search(request.query_params, request.user)
         
         # Check if we need to include related details
         include_related = request.query_params.get('include_related_details', '').lower() == 'true'
         serializer_class = DocumentSerializer if include_related else DocumentListSerializer
         
         # Paginate results
-        page = self.paginate_queryset(documents)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(documents, request, view=self)
+        
         if page is not None:
             serializer = serializer_class(page, many=True, context={'request': request})
-            return self.get_paginated_response(serializer.data)
+            return paginator.get_paginated_response(serializer.data)
         
         # If no pagination, return all results
         serializer = serializer_class(documents, many=True, context={'request': request})
         return Response(serializer.data)
-    
-    @property
-    def paginator(self):
-        """Get or create a paginator."""
-        if not hasattr(self, '_paginator'):
-            from rest_framework.pagination import PageNumberPagination
-            self._paginator = PageNumberPagination()
-        return self._paginator
-    
-    def paginate_queryset(self, queryset):
-        """Paginate a queryset."""
-        return self.paginator.paginate_queryset(queryset, self.request, view=self)
-    
-    def get_paginated_response(self, data):
-        """Return a paginated response."""
-        return self.paginator.get_paginated_response(data)
 
 
 class SearchSuggestionsView(views.APIView):

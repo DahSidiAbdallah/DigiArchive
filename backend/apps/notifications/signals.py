@@ -2,18 +2,20 @@
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.core import serializers
 
 # Import directly from the module file to avoid circular imports
 from apps.documents.models import Document
 from apps.notifications.models import Notification
+from apps.notifications.utils import send_notification_to_user
 
 
 @receiver(post_save, sender=Document)
 def create_document_notifications(sender, instance, created, **kwargs):
     """Create notifications when documents are created or updated."""
     if created:
-        # Notify the uploader
-        Notification.objects.create(
+        # Create notification in database
+        notification = Notification.objects.create(
             user=instance.uploaded_by,
             notification_type='document_upload',
             title='Document Uploaded',
@@ -21,30 +23,62 @@ def create_document_notifications(sender, instance, created, **kwargs):
             document=instance
         )
         
+        # Send WebSocket notification
+        notification_data = {
+            'id': notification.id,
+            'type': notification.notification_type,
+            'title': notification.title,
+            'message': notification.message,
+            'is_read': notification.is_read,
+            'created_at': notification.created_at.isoformat(),
+            'document_id': instance.id,
+            'document_title': instance.title
+        }
+        
+        # Send to WebSocket
+        send_notification_to_user(notification.user.id, notification_data)
+        
         # Notify admins (you'd need to implement a way to identify admins)
         # This is a placeholder for that logic
         # admin_users = User.objects.filter(is_staff=True)
         # for admin in admin_users:
-        #     Notification.objects.create(
+        #     notification = Notification.objects.create(
         #         user=admin,
         #         notification_type='document_upload',
         #         title='New Document Uploaded',
         #         message=f'A new document "{instance.title}" was uploaded by {instance.uploaded_by}.',
         #         document=instance
         #     )
+        #     # Send WebSocket notification to admin
+        #     send_notification_to_user(admin.id, {...})
     
     else:
         # Document was updated
         # Notify when OCR processing completes
         if instance.is_ocr_processed:
             # OCR processing completed
-            Notification.objects.create(
+            notification = Notification.objects.create(
                 user=instance.uploaded_by,
                 notification_type='ocr_complete',
                 title='OCR Processing Complete',
                 message=f'OCR processing for "{instance.title}" has been completed.',
                 document=instance
             )
+            
+            # Send WebSocket notification
+            notification_data = {
+                'id': notification.id,
+                'type': notification.notification_type,
+                'title': notification.title,
+                'message': notification.message,
+                'is_read': notification.is_read,
+                'created_at': notification.created_at.isoformat(),
+                'document_id': instance.id,
+                'document_title': instance.title
+            }
+            
+            # Send to WebSocket
+            send_notification_to_user(notification.user.id, notification_data)
 
 
 # You can add more signal handlers for other notification types

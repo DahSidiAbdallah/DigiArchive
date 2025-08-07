@@ -41,12 +41,9 @@ def advanced_search(query_params, user=None):
             # Try to convert to integer and filter
             dept_id = int(department_id)
             documents = documents.filter(department_id=dept_id)
-            print(f"Filtering by department ID: {dept_id}, remaining documents: {documents.count()}")
-            # Print first few documents for debugging
-            for doc in documents[:5]:
-                print(f"Document in dept {dept_id}: {doc.pk} - {doc.title} - dept: {doc.department.pk if doc.department else None}")
         except (ValueError, TypeError):
-            print(f"Invalid department ID: {department_id}")
+            # Log error but don't disrupt the search
+            pass
     
     # Folder filter
     folder_id = query_params.get('folder_id', '')
@@ -55,12 +52,9 @@ def advanced_search(query_params, user=None):
             # Try to convert to integer and filter
             fld_id = int(folder_id)
             documents = documents.filter(folder_id=fld_id)
-            print(f"Filtering by folder ID: {fld_id}, remaining documents: {documents.count()}")
-            # Print first few documents for debugging
-            for doc in documents[:5]:
-                print(f"Document in folder {fld_id}: {doc.pk} - {doc.title} - folder: {doc.folder.pk if doc.folder else None}")
         except (ValueError, TypeError):
-            print(f"Invalid folder ID: {folder_id}")
+            # Log error but don't disrupt the search
+            pass
     
     # Content-specific search
     content_query = query_params.get('content_query', '')

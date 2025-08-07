@@ -43,6 +43,7 @@ THIRD_PARTY_APPS = [
     'drf_spectacular',
     'django_celery_beat',
     'django_celery_results',
+    'channels',
 ]
 
 LOCAL_APPS = [
@@ -51,6 +52,7 @@ LOCAL_APPS = [
     'apps.ai',
     'apps.search',
     'apps.notifications',
+    'django_elasticsearch_dsl',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -65,6 +67,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.documents.middleware.DocumentViewTrackingMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -86,6 +89,17 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.routing.application'
+
+# Channel Layers
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [env('REDIS_URL', default='redis://localhost:6379/0')],
+        },
+    },
+}
 
 # Database
 DATABASES = {
@@ -179,3 +193,12 @@ TESSERACT_CMD = env('TESSERACT_CMD', default='tesseract')
 
 # OpenAI
 OPENAI_API_KEY = env('OPENAI_API_KEY', default='')
+
+# Elasticsearch settings
+ELASTICSEARCH_DSL = {
+    'default': {
+        'hosts': env('ELASTICSEARCH_HOST', default='localhost:9200'),
+        'use_ssl': env('ELASTICSEARCH_USE_SSL', default=False),
+        'verify_certs': env('ELASTICSEARCH_VERIFY_CERTS', default=False),
+    },
+}

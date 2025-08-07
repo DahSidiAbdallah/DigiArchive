@@ -181,24 +181,7 @@ export default function Layout() {
                       Se déconnecter
                     </Disclosure.Button>
                   </>
-                ) : (
-                  <>
-                    <Disclosure.Button
-                      as={Link}
-                      to="/login"
-                      className="block w-full text-left px-4 py-2 text-base font-medium text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-md transition"
-                    >
-                      Se connecter
-                    </Disclosure.Button>
-                    <Disclosure.Button
-                      as={Link}
-                      to="/register"
-                      className="block w-full text-left px-4 py-2 text-base font-medium text-primary-700 hover:bg-primary-50 rounded-md transition"
-                    >
-                      S'inscrire
-                    </Disclosure.Button>
-                  </>
-                )}
+                ) : null}
               </div>
             </Disclosure.Panel>
           </>

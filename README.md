@@ -61,14 +61,14 @@ This platform will digitize, organize, and make searchable all MAFCI documents i
   - [x] Tags
   - [x] Content (via OCR data)
   - [x] Department or upload date
-- [ ] Use Elasticsearch for fast fuzzy/full-text searching (Planned)
+- [x] Use Elasticsearch for fast fuzzy/full-text searching
 - [x] Archive view (filter by BLs, Devis, Factures, etc.)
-- [ ] User activity logging (Audit trail) (Planned)
+- [x] User activity logging (Audit trail)
 **Deliverables:**
   - [x] Document explorer UI
   - [x] Search bar with filters
-  - [ ] Audit trail per file (Planned)
-  - [ ] Export (PDF, Excel) options (Planned)
+  - [x] Audit trail per file
+  - [x] Export (PDF, Excel) options
 
 ### Phase 4: Internal Chat & Collaboration
 **Goal:** Add team interaction
@@ -219,14 +219,14 @@ VITE_APP_NAME=MAFCI Archive
   - [x] Tags
   - [x] Content (via OCR data)
   - [x] Department or upload date
-- [ ] Use Elasticsearch for fast fuzzy/full-text searching (Planned)
+- [x] Use Elasticsearch for fast fuzzy/full-text searching
 - [x] Archive view (filter by BLs, Devis, Factures, etc.)
-- [ ] User activity logging (Audit trail) (Planned)
+- [x] User activity logging (Audit trail)
 **Deliverables:**
   - [x] Document explorer UI
   - [x] Search bar with filters
-  - [ ] Audit trail per file (Planned)
-  - [ ] Export (PDF, Excel) options (Planned)
+  - [x] Audit trail per file
+  - [x] Export (PDF, Excel) options
 
 ### Phase 4: Internal Chat & Collaboration
 **Goal:** Add team interaction
