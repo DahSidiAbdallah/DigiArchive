@@ -12,6 +12,7 @@ import DocumentListItem from '@/components/DocumentListItem'
 import EditDocumentModal from '@/components/EditDocumentModal'
 import TagManager from '@/components/TagManager'
 import ExportButtons from '@/components/ExportButtons'
+import useDebounce from '@/hooks/useDebounce'
 
 export default function Home() {
   const { isAuthenticated } = useAuth()
@@ -107,6 +108,36 @@ export default function Home() {
     }
   }, [isAuthenticated, selectedDepartment, selectedFolder])
   
+  // Create memoized search parameters
+  const searchParams = useMemo(() => {
+    return {
+      ordering: sortOrder === 'newest' ? '-created_at' : 
+                sortOrder === 'oldest' ? 'created_at' :
+                sortOrder === 'name' ? 'title' : '-title',
+      include_related_details: true,  // Always include department and folder details
+      department_id: currentDepartment?.id || selectedDepartment,
+      folder_id: currentFolder?.id || selectedFolder,
+      q: searchQuery?.trim() || undefined,
+      document_type: documentType || undefined,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      content_query: contentSearch?.trim() || undefined,
+      tags: selectedTagIds?.length ? selectedTagIds : undefined
+    } as SearchParams;
+  }, [
+    sortOrder, 
+    currentDepartment?.id, 
+    currentFolder?.id, 
+    selectedDepartment,
+    selectedFolder,
+    searchQuery,
+    documentType,
+    dateFrom,
+    dateTo,
+    contentSearch,
+    selectedTagIds?.length
+  ]);
+
   // Enhanced fetch documents function with advanced search
   const fetchDocuments = useCallback(async () => {
     if (!isAuthenticated) {
@@ -119,93 +150,36 @@ export default function Home() {
       // Important: Reset filters explicitly when changing views to avoid stale filters
       setFilteredDocuments([]);
       
-      // Build search parameters
-      const searchParams: SearchParams = {
-        ordering: sortOrder === 'newest' ? '-created_at' : 
-                  sortOrder === 'oldest' ? 'created_at' :
-                  sortOrder === 'name' ? 'title' : '-title',
-        include_related_details: true  // Always include department and folder details
-      }
+      // Clone the search parameters to avoid mutating the memoized object
+      const effectiveParams = {...searchParams};
       
-      // Add filters based on current view
+      // Override parameters based on current view
       if (currentView === 'department' && currentDepartment) {
-        searchParams.department_id = currentDepartment.id
-        // Important: explicitly set folder_id to null to avoid old folder filters
-        searchParams.folder_id = undefined
-        // Log for debugging
-        console.log(`Filtering documents by department: ${currentDepartment.name} (ID: ${currentDepartment.id})`)
+        effectiveParams.department_id = currentDepartment.id;
+        effectiveParams.folder_id = undefined; // Clear folder filter in department view
       } else if (currentView === 'folder' && currentFolder) {
-        searchParams.folder_id = currentFolder.id
-        searchParams.department_id = currentDepartment?.id  // Include department context for folder view
-        // Log for debugging
-        console.log(`Filtering documents by folder: ${currentFolder.name} (ID: ${currentFolder.id}) in department: ${currentDepartment?.name} (ID: ${currentDepartment?.id})`)
+        effectiveParams.folder_id = currentFolder.id;
+        effectiveParams.department_id = currentDepartment?.id; // Include department context
       } else {
         // Reset department and folder filters when in main view
-        searchParams.department_id = undefined;
-        searchParams.folder_id = undefined;
+        effectiveParams.department_id = undefined;
+        effectiveParams.folder_id = undefined;
       }
       
-      // Legacy department/folder filters for compatibility - but avoid conflicts
-      if (selectedDepartment !== null && !searchParams.department_id) {
-        searchParams.department_id = selectedDepartment
-      }
+      // Add a timestamp parameter to prevent caching
+      effectiveParams.timestamp = Date.now();
       
-      if (selectedFolder !== null && !searchParams.folder_id) {
-        searchParams.folder_id = selectedFolder
+      // Log the search parameters for debugging (only when debug enabled)
+      if (DEBUG_ENABLED) {
+        console.log('Searching with params:', JSON.stringify(effectiveParams));
       }
-      
-      // Add search query
-      if (searchQuery.trim()) {
-        searchParams.q = searchQuery.trim()
-      }
-      
-      // Add document type filter
-      if (documentType) {
-        searchParams.document_type = documentType
-      }
-      
-      // Add date filters
-      if (dateFrom) {
-        searchParams.date_from = dateFrom
-      }
-      if (dateTo) {
-        searchParams.date_to = dateTo
-      }
-      
-      // Add content search
-      if (contentSearch.trim()) {
-        searchParams.content_query = contentSearch.trim()
-      }
-      
-      // Add tag filters
-      if (selectedTagIds.length > 0) {
-        searchParams.tags = selectedTagIds
-      }
-      
-      // Log the search parameters for debugging
-      console.log('Searching with params:', JSON.stringify(searchParams));
       
       // Perform search
-      const response = await advancedSearch(searchParams)
+      const response = await advancedSearch(effectiveParams)
       
-      // Enhanced logging for document results
-      console.log(`Search returned ${response.results.length} documents`);
-      
-      // Detailed logging for department/folder filtering diagnosis
-      if (currentView === 'department' && currentDepartment) {
-        console.log(`Department view (${currentDepartment.name}) - Checking documents:`);
-        response.results.slice(0, 5).forEach(doc => {
-          const docDepartmentId = doc.department_details ? doc.department_details.id : 
-                                (typeof doc.department === 'object' ? doc.department?.id : doc.department);
-          console.log(`Document ${doc.id}: "${doc.title}" - Department: ${docDepartmentId === currentDepartment.id ? '✓' : '✗'} (${docDepartmentId})`);
-        });
-      } else if (currentView === 'folder' && currentFolder) {
-        console.log(`Folder view (${currentFolder.name}) - Checking documents:`);
-        response.results.slice(0, 5).forEach(doc => {
-          const docFolderId = doc.folder_details ? doc.folder_details.id : 
-                            (typeof doc.folder === 'object' ? doc.folder?.id : doc.folder);
-          console.log(`Document ${doc.id}: "${doc.title}" - Folder: ${docFolderId === currentFolder.id ? '✓' : '✗'} (${docFolderId})`);
-        });
+      // Minimal logging to prevent performance issues
+      if (DEBUG_ENABLED) {
+        console.log(`Search returned ${response.results.length} documents`);
       }
       
       // Sanitize the data to ensure we have proper department and folder references
@@ -216,13 +190,11 @@ export default function Home() {
         // Check if we need to fix department references
         if (doc.department_details && !doc.department) {
           sanitizedDoc.department = doc.department_details;
-          console.log(`Fixed missing department reference for doc ${doc.id}`);
         }
         
         // Check if we need to fix folder references
         if (doc.folder_details && !doc.folder) {
           sanitizedDoc.folder = doc.folder_details;
-          console.log(`Fixed missing folder reference for doc ${doc.id}`);
         }
         
         return sanitizedDoc;
@@ -246,22 +218,31 @@ export default function Home() {
     } finally {
       setDocumentsLoading(false)
     }
-  }, [isAuthenticated, currentView, currentDepartment, currentFolder, selectedDepartment, selectedFolder, searchQuery, documentType, sortOrder, dateFrom, dateTo, contentSearch, selectedTagIds])
+  }, [isAuthenticated, currentView, currentDepartment?.id, currentFolder?.id, selectedDepartment, selectedFolder, searchQuery, documentType, sortOrder, dateFrom, dateTo, contentSearch, selectedTagIds?.length])
   
   // Real-time filtering for quick search
+  // Disable all debug logs to improve performance
+  const DEBUG_ENABLED = false;
+  
   const performRealTimeFilter = useMemo(() => {
-    console.log('Performing real-time filtering on', documents?.length || 0, 'documents');
+    if (DEBUG_ENABLED) {
+      console.log('Performing real-time filtering on', documents?.length || 0, 'documents');
+    }
     
     // Ensure documents is an array
     if (!documents || !Array.isArray(documents)) {
-      console.log('No documents to filter');
+      if (DEBUG_ENABLED) {
+        console.log('No documents to filter');
+      }
       return []
     }
     
     // TEMPORARY OVERRIDE: If there's only 1 document and we're viewing Commercial department,
     // just return all documents - this is a temporary fix for the immediate issue
     if (documents.length === 1 && currentDepartment && currentDepartment.name === "Commercial") {
-      console.log("SPECIAL CASE: Single document for Commercial department - showing all documents");
+      if (DEBUG_ENABLED) {
+        console.log("SPECIAL CASE: Single document for Commercial department - showing all documents");
+      }
       return documents;
     }
     
@@ -270,10 +251,12 @@ export default function Home() {
     
     // Apply department filtering if in department view
     if (currentView === 'department' && currentDepartment) {
-      console.log(`Filtering by department: ${currentDepartment.name} (ID: ${currentDepartment.id})`);
+      if (DEBUG_ENABLED) {
+        console.log(`Filtering by department: ${currentDepartment.name} (ID: ${currentDepartment.id})`);
+      }
       
-      // Show what kind of data we have in the first document
-      if (documents.length > 0) {
+      // Show what kind of data we have in the first document - DEBUG ONLY
+      if (DEBUG_ENABLED && documents.length > 0) {
         const doc = documents[0];
         console.log('First document department data structure:', {
           id: doc.id,
@@ -301,21 +284,21 @@ export default function Home() {
         // Check all possible ways the department could be represented
         if (typeof doc.department === 'object' && doc.department && 'id' in doc.department) {
           matches = doc.department.id === currentDepartment.id;
-          if (matches) console.log(`Document ${doc.id} matches department as object: ${doc.department.id}`);
+          if (DEBUG_ENABLED && matches) console.log(`Document ${doc.id} matches department as object: ${doc.department.id}`);
         } else if (typeof doc.department === 'number') {
           matches = doc.department === currentDepartment.id;
-          if (matches) console.log(`Document ${doc.id} matches department as number: ${doc.department}`);
+          if (DEBUG_ENABLED && matches) console.log(`Document ${doc.id} matches department as number: ${doc.department}`);
         } else if (doc.department_details && doc.department_details.id) {
           matches = doc.department_details.id === currentDepartment.id;
-          if (matches) console.log(`Document ${doc.id} matches department_details: ${doc.department_details.id}`);
+          if (DEBUG_ENABLED && matches) console.log(`Document ${doc.id} matches department_details: ${doc.department_details.id}`);
         } else if (doc.department_name && currentDepartment.name) {
           // Match by name as a last resort
           matches = doc.department_name === currentDepartment.name;
-          if (matches) console.log(`Document ${doc.id} matches by department_name: ${doc.department_name}`);
+          if (DEBUG_ENABLED && matches) console.log(`Document ${doc.id} matches by department_name: ${doc.department_name}`);
         }
         
         // Log non-matches for debugging
-        if (!matches) {
+        if (DEBUG_ENABLED && !matches) {
           console.log(`Document ${doc.id} doesn't match department ${currentDepartment.id}. Document department:`, 
                      doc.department, doc.department_details);
         }
@@ -323,23 +306,23 @@ export default function Home() {
         return matches;
       });
       
-      console.log(`Department filtering returned ${filteredByDeptFolder.length} documents`);
+      if (DEBUG_ENABLED) console.log(`Department filtering returned ${filteredByDeptFolder.length} documents`);
     }
     
     // Apply folder filtering if in folder view
     if (currentView === 'folder' && currentFolder) {
-      console.log(`Filtering by folder: ${currentFolder.name} (ID: ${currentFolder.id})`);
+      if (DEBUG_ENABLED) console.log(`Filtering by folder: ${currentFolder.name} (ID: ${currentFolder.id})`);
       
       // TEMPORARY OVERRIDE: If there's only 1 document and we're viewing Client Documents folder in Commercial,
       // just return all documents - this is a temporary fix for the immediate issue
       if (documents.length === 1 && currentFolder.name === "Client Documents" && 
           currentDepartment && currentDepartment.name === "Commercial") {
-        console.log("SPECIAL CASE: Single document for Client Documents in Commercial - showing document");
+        if (DEBUG_ENABLED) console.log("SPECIAL CASE: Single document for Client Documents in Commercial - showing document");
         return documents;
       }
       
       // Show what kind of data we have in the first document
-      if (filteredByDeptFolder.length > 0) {
+      if (DEBUG_ENABLED && filteredByDeptFolder.length > 0) {
         const doc = filteredByDeptFolder[0];
         console.log('First document folder data structure:', {
           id: doc.id,
@@ -372,13 +355,13 @@ export default function Home() {
         // Then verify folder match
         if (typeof doc.folder === 'object' && doc.folder && 'id' in doc.folder) {
           exactFolderMatch = doc.folder.id === currentFolder.id;
-          if (exactFolderMatch) console.log(`Document ${doc.id} matches folder as object: ${doc.folder.id}`);
+          if (DEBUG_ENABLED && exactFolderMatch) console.log(`Document ${doc.id} matches folder as object: ${doc.folder.id}`);
         } else if (typeof doc.folder === 'number') {
           exactFolderMatch = doc.folder === currentFolder.id;
-          if (exactFolderMatch) console.log(`Document ${doc.id} matches folder as number: ${doc.folder}`);
+          if (DEBUG_ENABLED && exactFolderMatch) console.log(`Document ${doc.id} matches folder as number: ${doc.folder}`);
         } else if (doc.folder_details && doc.folder_details.id) {
           exactFolderMatch = doc.folder_details.id === currentFolder.id;
-          if (exactFolderMatch) console.log(`Document ${doc.id} matches folder_details: ${doc.folder_details.id}`);
+          if (DEBUG_ENABLED && exactFolderMatch) console.log(`Document ${doc.id} matches folder_details: ${doc.folder_details.id}`);
         }
         
         // STRICT MATCHING: Document must match BOTH folder AND department
@@ -386,7 +369,7 @@ export default function Home() {
         
         // Special case for Client Documents in Commercial - only if strict matching fails
         if (!strictMatch && currentFolder.name === 'Client Documents' && currentDepartment?.name === 'Commercial') {
-          console.log(`Document ${doc.id} failed strict match but checking special case for Client Documents`);
+          if (DEBUG_ENABLED) console.log(`Document ${doc.id} failed strict match but checking special case for Client Documents`);
           
           // Only consider this a match if:
           // 1. The document is explicitly in the Commercial department
@@ -395,13 +378,13 @@ export default function Home() {
               (doc.folder_details?.name?.includes('Client') ||
                (typeof doc.folder === 'object' && doc.folder?.name?.includes('Client')) ||
                doc.folder_name?.includes('Client'))) {
-            console.log(`Document ${doc.id} matched Commercial/Client Documents special case`);
+            if (DEBUG_ENABLED) console.log(`Document ${doc.id} matched Commercial/Client Documents special case`);
             return true;
           }
         }
         
         // Log non-matches for debugging
-        if (!strictMatch) {
+        if (DEBUG_ENABLED && !strictMatch) {
           console.log(`Document ${doc.id} doesn't match folder ${currentFolder.id}. Document folder:`, 
                      doc.folder, doc.folder_details);
         }
@@ -440,7 +423,7 @@ export default function Home() {
       
       return textMatch && typeMatch && dateFromMatch && dateToMatch && tagMatch
     })
-  }, [documents, currentView, currentDepartment, currentFolder, searchQuery, documentType, dateFrom, dateTo, selectedTagIds])
+  }, [documents, currentView, currentDepartment?.id, currentFolder?.id, searchQuery, documentType, dateFrom, dateTo, selectedTagIds?.length])
   
   // Update filtered documents when filters change
   useEffect(() => {
@@ -480,31 +463,29 @@ export default function Home() {
         }
       }, 500);
     }
-  }, [filteredDocuments, currentView, currentFolder, currentDepartment])
+  }, [filteredDocuments?.length, currentView, currentFolder?.id, currentDepartment?.id])
+  
+  // Create a debounced version of fetchDocuments
+  const debouncedFetchDocuments = useDebounce(fetchDocuments, 500, []);
   
   // Fetch documents when search filters change (but not navigation)
   // Navigation is handled separately by explicit fetchDocuments calls
   useEffect(() => {
     if (isAuthenticated) {
-      // Use debounce for search to avoid too many API calls
-      const timer = setTimeout(() => {
-        console.log('Search filters changed, fetching documents with params:', {
-          searchQuery,
-          documentType,
-          sortOrder,
-          dateRange: [dateFrom, dateTo],
-          contentSearch,
-          tags: selectedTagIds.length
-        });
-        
-        fetchDocuments();
-      }, 300) // Add small debounce for search
+      console.log('Search filters changed, queuing debounced fetch with params:', {
+        searchQuery,
+        documentType,
+        sortOrder,
+        dateRange: [dateFrom, dateTo],
+        contentSearch,
+        tags: selectedTagIds?.length || 0
+      });
       
-      return () => clearTimeout(timer);
+      debouncedFetchDocuments();
     }
   }, [
     isAuthenticated, 
-    fetchDocuments,
+    debouncedFetchDocuments,
     // Remove navigation dependencies as they're handled by explicit calls
     // to fetchDocuments when navigation happens
     searchQuery,
@@ -513,7 +494,7 @@ export default function Home() {
     dateFrom, 
     dateTo, 
     contentSearch,
-    selectedTagIds
+    selectedTagIds?.length
   ])
   
   // Handle click on a department
@@ -706,9 +687,10 @@ export default function Home() {
     // Build breadcrumbs with the correct department
     const departmentName = targetDepartment?.name || 
       (folder.department && typeof folder.department === 'object' ? folder.department.name : 'Department');
+    // Ensure departmentId is either a number or undefined (not null) to satisfy TypeScript
     const departmentId = targetDepartment?.id || 
       (folder.department && typeof folder.department === 'object' ? folder.department.id : 
-       (typeof folder.department === 'number' ? folder.department : null));
+       (typeof folder.department === 'number' ? folder.department : undefined));
     
     setBreadcrumbs([
       { name: 'Départements', type: 'departments' },

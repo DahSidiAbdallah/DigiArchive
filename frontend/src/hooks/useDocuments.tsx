@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Document, getDocuments } from '@/services/document.service';
 
-export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters = {}) => {
+// Add an optional refreshTrigger parameter to force refresh when it changes
+export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters = {}, refreshTrigger = 0) => {
   const { isAuthenticated } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -14,6 +15,9 @@ export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters
   const [hasNext, setHasNext] = useState(false);
   const [hasPrevious, setHasPrevious] = useState(false);
   const isMounted = useRef(true);
+  
+  // DEBUG flag to control excessive logging
+  const DEBUG_ENABLED = false;
 
   console.log('useDocuments: Auth state =', isAuthenticated);
 
@@ -42,7 +46,9 @@ export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters
     searchQuery = search,
     filterValues = filters
   ) => {
-    console.log('fetchDocuments called, isAuthenticated =', isAuthenticated);
+    // Add timestamp to prevent browser caching
+    const timestamp = Date.now();
+    console.log(`fetchDocuments called at ${timestamp}, isAuthenticated =`, isAuthenticated);
     
     if (!isAuthenticated) {
       console.log('User not authenticated, skipping document fetch');
@@ -53,9 +59,14 @@ export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters
     setError('');
 
     try {
+      // Add timestamp to filter values to prevent caching
+      const filtersWithTimestamp = { 
+        ...filterValues, 
+        _timestamp: timestamp.toString() 
+      };
+      
       console.log('Fetching documents...');
-      const response = await getDocuments(pageNumber, searchQuery, filterValues);
-      console.log('Documents response:', response);
+      const response = await getDocuments(pageNumber, searchQuery, filtersWithTimestamp);
       
       // Check if component is still mounted before updating state
       if (!isMounted.current) {
@@ -65,13 +76,11 @@ export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters
       
       // Ensure we have valid data before setting state
       if (response && response.results) {
-        console.log(`Setting ${response.results.length} documents`);
         setDocuments(response.results);
         setTotalCount(response.count || 0);
         setHasNext(!!response.next);
         setHasPrevious(!!response.previous);
       } else {
-        console.log('No documents in response, setting empty array');
         setDocuments([]);
         setTotalCount(0);
         setHasNext(false);
@@ -89,54 +98,24 @@ export const useDocuments = (initialPage = 1, initialSearch = '', initialFilters
         setIsLoading(false);
       }
     }
-  }, [isAuthenticated]); // Only depend on authentication status, not on page/search/filters
+  }, [isAuthenticated, page, search, filters]); // Include all dependencies
 
-  // This effect handles when page, search, or filters change
+  // This effect calls fetchDocuments when page, search, filters, or refreshTrigger change
   useEffect(() => {
-    let didCancel = false;
+    if (DEBUG_ENABLED) console.log('useDocuments effect triggered with refreshTrigger:', refreshTrigger);
     
-    const doFetch = async () => {
-      if (isAuthenticated && !didCancel) {
-        console.log('Fetching documents due to page/search/filter change');
-        // We pass current values directly to avoid dependency on fetchDocuments
-        setIsLoading(true);
-        try {
-          const response = await getDocuments(page, search, filters);
-          
-          if (!didCancel) {
-            if (response && response.results) {
-              setDocuments(response.results);
-              setTotalCount(response.count || 0);
-              setHasNext(!!response.next);
-              setHasPrevious(!!response.previous);
-            } else {
-              setDocuments([]);
-              setTotalCount(0);
-              setHasNext(false);
-              setHasPrevious(false);
-            }
-          }
-        } catch (err: any) {
-          if (!didCancel) {
-            console.error('Error in effect fetch:', err);
-            setDocuments([]);
-            setError(err.response?.data?.detail || 'Failed to load documents');
-          }
-        } finally {
-          if (!didCancel) {
-            setIsLoading(false);
-          }
-        }
+    // Use a debounce timer to prevent rapid-fire API calls
+    const debounceTimer = setTimeout(() => {
+      if (isAuthenticated) {
+        fetchDocuments(page, search, filters);
       }
-    };
+    }, 300); // 300ms debounce delay
     
-    doFetch();
-    
-    // Cleanup function to prevent setting state after unmount
+    // Cleanup function to cancel any pending debounced calls
     return () => {
-      didCancel = true;
+      clearTimeout(debounceTimer);
     };
-  }, [isAuthenticated, page, search, filters]);
+  }, [isAuthenticated, page, search, filters, fetchDocuments, refreshTrigger]);
 
   const nextPage = useCallback(() => {
     if (hasNext) {

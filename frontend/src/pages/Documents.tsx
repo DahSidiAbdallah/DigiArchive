@@ -6,6 +6,8 @@ import DepartmentSelector from '@/components/DepartmentSelector';
 import FolderManager from '@/components/FolderManager';
 import DocumentUpload from '@/components/DocumentUpload';
 import { useLocation } from 'react-router-dom';
+import { exportDocuments } from '@/services/document.service';
+import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 
 export default function Documents() {
   const { isAuthenticated } = useAuth();
@@ -17,6 +19,8 @@ export default function Documents() {
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [isFolderManagerOpen, setIsFolderManagerOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [folderRefreshKey, setFolderRefreshKey] = useState(0);
   
   // Check if we're on the upload route
@@ -33,7 +37,75 @@ export default function Documents() {
     folder: selectedFolder ? String(selectedFolder) : '',
   };
 
-  // Use the useDocuments hook
+  // Create a local version of the filters object to pass to the hook
+  const currentFilters = {
+    document_type: documentType,
+    department: selectedDepartment ? String(selectedDepartment) : '',
+    folder: selectedFolder ? String(selectedFolder) : '',
+  };
+  
+  // For tracking if filters have been changed since last API call
+  const [filtersChanged, setFiltersChanged] = useState(false);
+  
+  // Handler for exporting documents
+  const handleExport = async (format: string) => {
+    try {
+      setIsExporting(true);
+      
+      // Create export parameters with current filters
+      const exportFilters = {
+        document_type: documentType || '',
+        department: selectedDepartment ? String(selectedDepartment) : '',
+        folder: selectedFolder ? String(selectedFolder) : '',
+        // Add timestamp to prevent caching issues
+        _timestamp: Date.now().toString()
+      };
+      
+      // Generate a descriptive message for the success alert
+      let exportDescription = '';
+      
+      // Get department name from select element if possible
+      if (selectedDepartment) {
+        // Try to find the department name in the DOM
+        const deptElement = document.querySelector(`#department option[value="${selectedDepartment}"]`);
+        const deptName = deptElement ? deptElement.textContent : 'department';
+        exportDescription += `${deptName} `;
+      }
+      
+      // Get document type name from select element if possible
+      if (documentType) {
+        const typeElement = document.querySelector(`#document_type option[value="${documentType}"]`);
+        const typeName = typeElement ? typeElement.textContent : documentType;
+        exportDescription += `${typeName} `;
+      }
+      
+      // Add basic description
+      exportDescription += 'documents';
+      
+      // Add search terms if applicable
+      if (searchInput) {
+        exportDescription += ` containing "${searchInput}"`;
+      }
+      
+      console.log('Exporting documents with filters:', exportFilters);
+      
+      // Call the export function with all parameters
+      await exportDocuments(format, page || 1, searchInput, exportFilters);
+      
+      // Show success message
+      alert(`Exported ${exportDescription} in ${format.toUpperCase()} format`);
+      
+      // Close the modal
+      setIsExportModalOpen(false);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export documents. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  
+  // Use the useDocuments hook with current values and track the search/filter changes
   const {
     documents,
     isLoading,
@@ -47,18 +119,47 @@ export default function Documents() {
     refreshDocuments,
     updateSearch,
     updateFilters,
-  } = useDocuments(1, '', {});
-
-  // Update search in hook with debounce
+  } = useDocuments(1, searchInput, currentFilters);
+  
+  // Consolidated search and filter handling with proper debounce
   useEffect(() => {
-    const handler = setTimeout(() => updateSearch(searchInput), 300);
+    // Debug logging
+    console.log('Search input changed:', searchInput);
+    
+    // Use a debounce timer to prevent rapid-fire API calls
+    const handler = setTimeout(() => {
+      // Update search in the hook directly
+      updateSearch(searchInput);
+    }, 500); // 500ms debounce
+    
     return () => clearTimeout(handler);
   }, [searchInput, updateSearch]);
-
-  // Update filters in hook when local filters change
+  
+  // Separate effect for filter changes
   useEffect(() => {
-    updateFilters(filters);
-  }, [filters, updateFilters]);
+    // Debug logging
+    console.log('Filters changed:', { documentType, selectedDepartment, selectedFolder });
+    
+    // Create the filter object
+    const newFilters = {
+      document_type: documentType,
+      department: selectedDepartment ? String(selectedDepartment) : '',
+      folder: selectedFolder ? String(selectedFolder) : '',
+    };
+    
+    // Update filters in the hook directly
+    updateFilters(newFilters);
+    
+  }, [documentType, selectedDepartment, selectedFolder, updateFilters]);
+  
+  // Add mount/unmount logging
+  useEffect(() => {
+    console.log('Documents component mounted');
+    
+    return () => {
+      console.log('Documents component unmounted');
+    };
+  }, []);
 
   // If not authenticated, show login message
   if (!isAuthenticated) {
@@ -77,7 +178,7 @@ export default function Documents() {
       {/* Header and actions */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <h2 className="text-3xl font-bold text-primary-700 tracking-tight">Documents</h2>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
             type="button"
             onClick={() => setIsUploadModalOpen(true)}
@@ -97,6 +198,28 @@ export default function Documents() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
             Gérer les dossiers
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsExportModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-base font-semibold text-white shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition"
+            disabled={isExporting}
+          >
+            <ArrowDownTrayIcon className="h-5 w-5" />
+            {isExporting ? 'Exportation...' : 'Exporter Tout'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // Force refresh without changing any filters
+              refreshDocuments();
+            }}
+            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2 text-base font-semibold text-white shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Rafraîchir
           </button>
         </div>
       </div>
@@ -120,7 +243,9 @@ export default function Documents() {
                 id="search"
                 placeholder="Chercher des documents..."
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                onChange={(e) => {
+                  setSearchInput(e.target.value);
+                }}
                 className="block w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -129,12 +254,40 @@ export default function Documents() {
                 </svg>
               </div>
             </div>
-            <div className="flex gap-2 w-full md:w-auto">
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              {/* Quick filter buttons */}
+              <button
+                onClick={() => {
+                  // Set Commercial department filter
+                  const commercialDeptId = 2; // Commercial department ID
+                  setSelectedDepartment(commercialDeptId);
+                  setDocumentType(''); // Reset document type
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-1 text-sm font-medium text-blue-800 hover:bg-blue-200"
+              >
+                <span>Commercial Documents</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Clear all filters
+                  setSelectedDepartment(null);
+                  setSelectedFolder(null);
+                  setDocumentType('');
+                  setSearchInput('');
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-sm font-medium text-gray-800 hover:bg-gray-200"
+              >
+                <span>View All</span>
+              </button>
+            
               <select
                 id="document_type"
                 name="document_type"
                 value={documentType}
-                onChange={(e) => setDocumentType(e.target.value)}
+                onChange={(e) => {
+                  setDocumentType(e.target.value);
+                }}
                 className="block w-full rounded-lg border border-gray-300 py-2 pl-3 pr-10 text-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white shadow-sm"
               >
                 <option value="">Tous les types de documents</option>
@@ -200,8 +353,21 @@ export default function Documents() {
                   d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
                 />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No documents</h3>
-              <p className="mt-1 text-sm text-gray-500">Get started by uploading your first document.</p>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No documents found</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {searchInput || documentType || selectedDepartment || selectedFolder ? 
+                  "No documents match your search criteria. Try adjusting your filters." : 
+                  "Get started by uploading your first document."
+                }
+              </p>
+              <div className="mt-2">
+                <button 
+                  onClick={refreshDocuments}
+                  className="text-primary-600 underline hover:text-primary-800"
+                >
+                  Refresh documents
+                </button>
+              </div>
               <div className="mt-6">
                 <button
                   type="button"
@@ -318,6 +484,74 @@ export default function Documents() {
           refreshDocuments();
         }}
       />
+      
+      {/* Export Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 overflow-y-auto z-50">
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="fixed inset-0 bg-black opacity-30" onClick={() => setIsExportModalOpen(false)}></div>
+            <div className="relative bg-white rounded-lg shadow-lg max-w-md w-full">
+              <div className="p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Export Documents</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Choose a format to export the current document list. 
+                  {selectedDepartment && <strong> Filtered by department.</strong>}
+                  {documentType && <strong> Filtered by document type.</strong>}
+                  {searchInput && <strong> Filtered by search term.</strong>}
+                </p>
+                
+                <div className="space-y-4 mt-6">
+                  <button
+                    onClick={() => handleExport('csv')}
+                    disabled={isExporting}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <div>
+                      <span className="block font-medium text-gray-900">CSV</span>
+                      <span className="text-sm text-gray-500">Compatible with Excel, Google Sheets</span>
+                    </div>
+                    <ArrowDownTrayIcon className="h-5 w-5 text-gray-400" />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleExport('excel')}
+                    disabled={isExporting}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <div>
+                      <span className="block font-medium text-gray-900">Excel</span>
+                      <span className="text-sm text-gray-500">Native Excel format with formatting</span>
+                    </div>
+                    <ArrowDownTrayIcon className="h-5 w-5 text-gray-400" />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleExport('json')}
+                    disabled={isExporting}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <div>
+                      <span className="block font-medium text-gray-900">JSON</span>
+                      <span className="text-sm text-gray-500">For developers and data integration</span>
+                    </div>
+                    <ArrowDownTrayIcon className="h-5 w-5 text-gray-400" />
+                  </button>
+                </div>
+                
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsExportModalOpen(false)}
+                    className="inline-flex justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

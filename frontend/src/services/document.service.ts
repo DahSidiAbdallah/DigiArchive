@@ -95,31 +95,24 @@ export const getDocuments = async (
   try {
     // Get the token to check if we're properly authenticated
     const token = localStorage.getItem('token');
-    console.log('Document API call to:', url);
-    console.log('Has authentication token:', !!token);
     
     if (!token) {
       console.warn('Making document API call without authentication token');
       throw new Error('No authentication token available');
     }
     
-    const response = await api.get<DocumentListResponse>(url);
+    // Add a cache buster to prevent browser caching
+    params.append('_t', Date.now().toString());
     
-    console.log('Document API response:', {
-      status: response.status,
-      data: response.data,
-      dataType: typeof response.data
-    });
+    const response = await api.get<DocumentListResponse>(url);
     
     // Validate response structure
     if (!response.data) {
-      console.error('Empty response from API');
       throw new Error('Empty response from API');
     }
 
     // Handle the case where the response is an array instead of the expected object
     if (Array.isArray(response.data)) {
-      console.log('API returned array instead of paginated response object, adapting...');
       // Convert the array to the expected format
       return {
         count: response.data.length,
@@ -131,7 +124,6 @@ export const getDocuments = async (
     
     // Standard response validation
     if (!Array.isArray(response.data.results)) {
-      console.error('Invalid response structure from API:', response.data);
       throw new Error('Invalid response from API - missing results array');
     }
     
@@ -585,6 +577,67 @@ export const updateDocument = async (id: number, documentData: Partial<Document>
  */
 export const deleteDocument = async (id: number): Promise<void> => {
   await api.delete(`/documents/${id}/`);
+};
+
+/**
+ * Export documents with current filters
+ */
+export const exportDocuments = async (
+  format: string = 'csv',
+  page: number = 1,
+  search: string = '',
+  filters: Record<string, string> = {}
+): Promise<void> => {
+  // Build query string from filters
+  const params = new URLSearchParams();
+  
+  // Add format parameter
+  params.append('format', format);
+  
+  // Add pagination parameter
+  params.append('page', page.toString());
+  
+  // Add search parameters
+  if (search) {
+    params.append('search', search);
+  }
+  
+  // Content search if available
+  if (filters.content) {
+    params.append('content', filters.content);
+  }
+  
+  // Date ranges if available
+  if (filters.date_from) {
+    params.append('date_from', filters.date_from);
+  }
+  
+  if (filters.date_to) {
+    params.append('date_to', filters.date_to);
+  }
+  
+  // Add department, folder, document_type filters
+  if (filters.department) {
+    params.append('department', filters.department);
+  }
+  
+  if (filters.folder) {
+    params.append('folder', filters.folder);
+  }
+  
+  if (filters.document_type) {
+    params.append('document_type', filters.document_type);
+  }
+  
+  // Add any remaining filters to the params
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value && !['department', 'folder', 'document_type', 'content', 'date_from', 'date_to'].includes(key)) {
+      params.append(key, value);
+    }
+  });
+  
+  // Use the browser's download capability for the file
+  window.location.href = `${api.defaults.baseURL}/documents/export/?${params.toString()}`;
 };
 
 /**
