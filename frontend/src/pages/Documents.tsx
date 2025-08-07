@@ -45,7 +45,20 @@ export default function Documents() {
     nextPage,
     previousPage,
     refreshDocuments,
-  } = useDocuments(1, searchInput, filters);
+    updateSearch,
+    updateFilters,
+  } = useDocuments(1, '', {});
+
+  // Update search in hook with debounce
+  useEffect(() => {
+    const handler = setTimeout(() => updateSearch(searchInput), 300);
+    return () => clearTimeout(handler);
+  }, [searchInput, updateSearch]);
+
+  // Update filters in hook when local filters change
+  useEffect(() => {
+    updateFilters(filters);
+  }, [filters, updateFilters]);
 
   // If not authenticated, show login message
   if (!isAuthenticated) {

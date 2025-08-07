@@ -56,10 +56,12 @@ class DocumentAuditLogView(views.APIView):
                     status=403
                 )
             
-            # Get audit logs for the document
-            logs = get_object_audit_logs(document)
+            # Get audit logs for the document with optional limit
+            limit_param = request.query_params.get('limit')
+            limit = int(limit_param) if limit_param and limit_param.isdigit() else None
+            logs = get_object_audit_logs(document, limit)
             serializer = AuditLogSerializer(logs, many=True)
-            
+
             return Response(serializer.data)
             
         except Document.DoesNotExist:
