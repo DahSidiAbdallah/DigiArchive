@@ -75,11 +75,10 @@ def process_document_ocr_sync(document_id):
         document = Document.objects.get(id=document_id)
         
         # Get the full file path or file object
-        try:
-            file_path = document.file.path
-        except Exception:
-            file_path = document.file
-        
+        # Resolve file path or object
+        file_obj = getattr(document.file, 'path', document.file)
+        file_path = str(file_obj)
+
         # Extract text based on file type
         if file_path.lower().endswith('.pdf'):
             text = extract_text_from_pdf(file_path)

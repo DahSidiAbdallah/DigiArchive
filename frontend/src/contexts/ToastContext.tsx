@@ -83,7 +83,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 function ToastContainer({ toasts, onRemove }: { toasts: Toast[], onRemove: (id: string) => void }) {
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-4 max-w-sm">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 space-y-4 max-w-md w-full px-4">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
